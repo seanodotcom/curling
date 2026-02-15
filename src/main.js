@@ -1,10 +1,12 @@
 import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.161.0/build/three.module.js";
 
+const SCOTLAND_FLAG = "\u{1F3F4}\u{E0067}\u{E0062}\u{E0073}\u{E0063}\u{E0074}\u{E007F}";
+
 const COUNTRIES = [
   { code: "CAN", name: "Canada", flag: "🇨🇦" },
   { code: "SWE", name: "Sweden", flag: "🇸🇪" },
   { code: "SUI", name: "Switzerland", flag: "🇨🇭" },
-  { code: "SCO", name: "Scotland", flag: "🏴" },
+  { code: "SCO", name: "Scotland", flag: SCOTLAND_FLAG },
   { code: "USA", name: "United States", flag: "🇺🇸" },
   { code: "NOR", name: "Norway", flag: "🇳🇴" },
   { code: "JPN", name: "Japan", flag: "🇯🇵" },
