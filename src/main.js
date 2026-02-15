@@ -24,8 +24,9 @@ const HACK_Y = -20.3;
 const RELEASE_LINE_Y = -10.0;
 const FAR_HOG_Y = 10.0;
 const TEE_Y = 20.0;
-const BACK_LINE_Y = 22.4;
 const HOUSE_RADIUS = 1.83;
+const BACK_LINE_Y = TEE_Y + HOUSE_RADIUS + 0.03;
+const END_WALL_Y = HALF_LENGTH - 0.05;
 
 const G = 9.81;
 const BASE_MU = 0.0142;
@@ -33,8 +34,7 @@ const MIN_SHOT_SPEED = 1.55;
 const MAX_SHOT_SPEED = 3.1;
 const DELIVERY_SPEED = 1.2;
 const POWER_CURVE = 1.55;
-const CURL_COEFFICIENT = 0.13;
-const CURL_DEAD_ZONE = 0.06;
+const CURL_COEFFICIENT = 0.02;
 const STOP_SPEED = 0.012;
 const LOW_SPEED_SETTLE = 0.09;
 const HANDLE_IDLE_ROTATION_SPEED = 0.11;
@@ -43,6 +43,10 @@ const SIDEWALL_DEFAULT_COLOR = 0x1f2937;
 const SIDEWALL_ALERT_COLOR = 0xdc2626;
 const SIDEWALL_HIT_MARGIN = 0.03;
 const BACKWALL_HIT_MARGIN = 0.035;
+const SIDEWALL_RESTITUTION = 0.72;
+const ENDWALL_RESTITUTION = 0.64;
+const WALL_TANGENTIAL_DAMP = 0.985;
+const WALL_SEPARATION_EPS = 0.003;
 
 const SIDE_COLORS = [0xdc2626, 0xfacc15];
 const SIDE_TEXT = ["P1", "P2"];
@@ -64,6 +68,75 @@ const powerPctToSpeed = (pct) =>
 const speedToPowerPct = (speed) =>
   Math.pow(clamp((speed - MIN_SHOT_SPEED) / (MAX_SHOT_SPEED - MIN_SHOT_SPEED), 0, 1), 1 / POWER_CURVE);
 const sanitizeStonesPerSide = (value) => (STONE_OPTIONS.includes(value) ? value : DEFAULT_STONES_PER_SIDE);
+const normalizeCurlInput = (value) => {
+  const clamped = clamp(value, -1, 1);
+  const sign = Math.sign(clamped);
+  const mag = Math.abs(clamped);
+  if (mag < 0.16) return 0;
+  if (mag < 0.5) return sign * (1 / 3);
+  if (mag < 0.84) return sign * (2 / 3);
+  return sign;
+};
+const stepToCurlInput = (step) => clamp(Math.round(step), -3, 3) / 3;
+const curlInputToStep = (input) => Math.round(normalizeCurlInput(input) * 3);
+const CURL_TIER_PROFILES = {
+  0: {
+    tierLabel: "No Handle",
+    turns: "0",
+    visualStrength: 0,
+    curlFactor: 0,
+    frictionScale: 1.06
+  },
+  1: {
+    tierLabel: "Low Rotation",
+    turns: "1-2",
+    visualStrength: 0.34,
+    curlFactor: 0.62,
+    frictionScale: 1.02
+  },
+  2: {
+    tierLabel: "Standard Rotation",
+    turns: "3-5",
+    visualStrength: 0.62,
+    curlFactor: 0.4,
+    frictionScale: 1.0
+  },
+  3: {
+    tierLabel: "High Rotation",
+    turns: "8+",
+    visualStrength: 1.0,
+    curlFactor: 0.15,
+    frictionScale: 0.93
+  }
+};
+
+function getCurlProfile(input) {
+  const quantized = normalizeCurlInput(input);
+  const direction = Math.sign(quantized);
+  const tier = Math.round(Math.abs(quantized) * 3);
+  const base = CURL_TIER_PROFILES[tier];
+  const directionLabel = direction < 0 ? "CCW" : direction > 0 ? "CW" : "No Turn";
+  return {
+    quantized,
+    direction,
+    directionLabel,
+    tier,
+    ...base
+  };
+}
+
+function describeCurlGuidance(profile) {
+  if (profile.tier === 0) {
+    return "No handle: least predictable path, can drift either way.";
+  }
+  if (profile.tier === 1) {
+    return `${profile.directionLabel} low (1-2 turns): maximum curl, slightly shorter glide.`;
+  }
+  if (profile.tier === 2) {
+    return `${profile.directionLabel} standard (3-5 turns): balanced curl and distance.`;
+  }
+  return `${profile.directionLabel} high (8+ turns): straighter line and longer glide.`;
+}
 
 const el = {
   canvas: document.getElementById("game-canvas"),
@@ -71,6 +144,8 @@ const el = {
   shotLabel: document.getElementById("shot-label"),
   statusLabel: document.getElementById("status-label"),
   turnLabel: document.getElementById("turn-label"),
+  team0Card: document.getElementById("team0-card"),
+  team1Card: document.getElementById("team1-card"),
   team0Label: document.getElementById("team0-label"),
   team1Label: document.getElementById("team1-label"),
   score0Label: document.getElementById("score0-label"),
@@ -91,6 +166,7 @@ const el = {
   launchBtn: document.getElementById("launch-btn"),
 
   curlControls: document.getElementById("curl-controls"),
+  curlHelpText: document.getElementById("curl-help-text"),
   curlValueLabel: document.getElementById("curl-value-label"),
   curlSlider: document.getElementById("curl-slider"),
   throwBtn: document.getElementById("throw-btn"),
@@ -100,6 +176,11 @@ const el = {
   sweepFill: document.getElementById("sweep-fill"),
   strategyViewBtns: [...document.querySelectorAll(".strategy-view-btn")],
   fastForwardBtn: document.getElementById("fast-forward-btn"),
+  fastForwardLabel: document.getElementById("fast-forward-label"),
+  hudOverlay: document.getElementById("hud-overlay"),
+  soundToggleBtn: document.getElementById("sound-toggle-btn"),
+  soundToggleIcon: document.getElementById("sound-toggle-icon"),
+  soundToggleLabel: document.getElementById("sound-toggle-label"),
   endReviewPanel: document.getElementById("end-review-panel"),
   endReviewTitle: document.getElementById("end-review-title"),
   endReviewBody: document.getElementById("end-review-body"),
@@ -144,7 +225,8 @@ const game = {
   lastWinner: null,
   cameraMode: "overview",
   strategyView: false,
-  fastForward: false,
+  fastForwardMultiplier: 1,
+  soundEnabled: true,
   controls: {
     startX: 0,
     powerPct: 0.65,
@@ -159,6 +241,23 @@ const game = {
   }
 };
 const totalShots = () => game.stonesPerSide * 2;
+
+const audio = {
+  ctx: null,
+  unlocked: false,
+  master: null,
+  glideSource: null,
+  glideFilter: null,
+  glideGain: null,
+  sweepSource: null,
+  sweepFilter: null,
+  sweepGain: null,
+  glideTone: null,
+  glideToneGain: null,
+  impactBuffer: null,
+  impactBodyBuffer: null,
+  lastHitAt: 0
+};
 
 let renderer;
 let scene;
@@ -202,7 +301,7 @@ function initUI() {
     btn.addEventListener("click", () => {
       game.mode = btn.dataset.mode;
       styleModeButtons();
-      el.team1InlineLabel.textContent = game.mode === "1p" ? "AI Team (Yellow)" : "Player 2 Team (Yellow)";
+      el.team1InlineLabel.textContent = game.mode === "1p" ? "AI (Yellow)" : "P2 (Yellow)";
     });
   });
 
@@ -261,11 +360,10 @@ function initUI() {
   });
 
   el.curlSlider.addEventListener("input", () => {
-    game.controls.curlInput = Number(el.curlSlider.value) / 100;
+    game.controls.curlInput = stepToCurlInput(Number(el.curlSlider.value));
     updateCurlReadout();
     if (game.activeStone && game.shotState === "delivery") {
-      game.activeStone.spinSign = -Math.sign(game.controls.curlInput) || 1;
-      game.activeStone.spinStrength = Math.abs(game.controls.curlInput);
+      applyStoneSpinProfile(game.activeStone, game.controls.curlInput);
     }
   });
 
@@ -312,29 +410,48 @@ function initUI() {
 
   el.fastForwardBtn.addEventListener("click", () => {
     if (!isAIThrowInProgress()) return;
-    game.fastForward = !game.fastForward;
+    const next = game.fastForwardMultiplier === 1 ? 2 : game.fastForwardMultiplier === 2 ? 4 : 1;
+    game.fastForwardMultiplier = next;
     updateFastForwardButton();
   });
+
+  el.soundToggleBtn.addEventListener("click", () => {
+    game.soundEnabled = !game.soundEnabled;
+    if (game.soundEnabled) {
+      ensureAudioEngine();
+    }
+    updateSoundToggleButton();
+    updateAudioMix();
+  });
+
+  const applySweepInput = (clientX, now = performance.now()) => {
+    if (!game.sweep.activePointer || game.shotState !== "running") return;
+    const dt = Math.max(1, now - game.sweep.lastT);
+    const dx = clientX - game.sweep.lastX;
+    const speedPxMs = Math.abs(dx) / dt;
+    const effectiveSweepSpeed = Math.max(0, speedPxMs - 0.38);
+    game.sweep.boost = clamp(game.sweep.boost + effectiveSweepSpeed * 0.055, 0, 1);
+    game.sweep.lastX = clientX;
+    game.sweep.lastT = now;
+  };
 
   el.sweepPad.addEventListener("pointerdown", (event) => {
     if (game.shotState !== "running") return;
     event.preventDefault();
-    el.sweepPad.setPointerCapture(event.pointerId);
+    if (el.sweepPad.setPointerCapture) {
+      try {
+        el.sweepPad.setPointerCapture(event.pointerId);
+      } catch (_) {
+        // Ignore capture failures on some mobile browsers.
+      }
+    }
     game.sweep.activePointer = true;
     game.sweep.lastX = event.clientX;
     game.sweep.lastT = performance.now();
   });
 
   el.sweepPad.addEventListener("pointermove", (event) => {
-    if (!game.sweep.activePointer || game.shotState !== "running") return;
-    const now = performance.now();
-    const dt = Math.max(1, now - game.sweep.lastT);
-    const dx = event.clientX - game.sweep.lastX;
-    const speedPxMs = Math.abs(dx) / dt;
-    const effectiveSweepSpeed = Math.max(0, speedPxMs - 0.38);
-    game.sweep.boost = clamp(game.sweep.boost + effectiveSweepSpeed * 0.055, 0, 1);
-    game.sweep.lastX = event.clientX;
-    game.sweep.lastT = now;
+    applySweepInput(event.clientX, performance.now());
   });
 
   const endSweep = () => {
@@ -345,13 +462,249 @@ function initUI() {
   el.sweepPad.addEventListener("pointercancel", endSweep);
   el.sweepPad.addEventListener("pointerleave", endSweep);
 
+  el.sweepPad.addEventListener(
+    "touchstart",
+    (event) => {
+      if (game.shotState !== "running") return;
+      if (event.touches.length === 0) return;
+      event.preventDefault();
+      const touch = event.touches[0];
+      game.sweep.activePointer = true;
+      game.sweep.lastX = touch.clientX;
+      game.sweep.lastT = performance.now();
+    },
+    { passive: false }
+  );
+
+  el.sweepPad.addEventListener(
+    "touchmove",
+    (event) => {
+      if (event.touches.length === 0) return;
+      event.preventDefault();
+      applySweepInput(event.touches[0].clientX, performance.now());
+    },
+    { passive: false }
+  );
+
+  el.sweepPad.addEventListener("touchend", endSweep, { passive: true });
+  el.sweepPad.addEventListener("touchcancel", endSweep, { passive: true });
+
   styleModeButtons();
+  el.team1InlineLabel.textContent = game.mode === "1p" ? "AI (Yellow)" : "P2 (Yellow)";
   styleEndsButtons();
   styleStonesButtons();
   updateCurlReadout();
   setThrowButtonReady(false);
   updateStrategyViewButton();
   updateFastForwardButton();
+  updateSoundToggleButton();
+  updateSoundTogglePosition();
+  installAudioUnlockHandlers();
+}
+
+function installAudioUnlockHandlers() {
+  const unlock = () => {
+    if (game.soundEnabled) ensureAudioEngine();
+  };
+  window.addEventListener("pointerdown", unlock, { once: true, passive: true });
+  window.addEventListener("touchstart", unlock, { once: true, passive: true });
+  window.addEventListener("keydown", unlock, { once: true });
+}
+
+function buildNoiseBuffer(ctx, seconds = 2) {
+  const length = Math.max(1, Math.floor(ctx.sampleRate * seconds));
+  const buffer = ctx.createBuffer(1, length, ctx.sampleRate);
+  const data = buffer.getChannelData(0);
+  for (let i = 0; i < length; i += 1) {
+    data[i] = (Math.random() * 2 - 1) * 0.85;
+  }
+  return buffer;
+}
+
+function buildBrownNoiseBuffer(ctx, seconds = 2) {
+  const length = Math.max(1, Math.floor(ctx.sampleRate * seconds));
+  const buffer = ctx.createBuffer(1, length, ctx.sampleRate);
+  const data = buffer.getChannelData(0);
+  let last = 0;
+  for (let i = 0; i < length; i += 1) {
+    const white = Math.random() * 2 - 1;
+    last = (last + 0.03 * white) / 1.03;
+    data[i] = clamp(last * 3.4, -1, 1);
+  }
+  return buffer;
+}
+
+function ensureAudioEngine() {
+  const AudioCtx = window.AudioContext || window.webkitAudioContext;
+  if (!AudioCtx) return;
+
+  if (!audio.ctx) {
+    audio.ctx = new AudioCtx();
+    audio.master = audio.ctx.createGain();
+    audio.master.gain.value = 0.55;
+    audio.master.connect(audio.ctx.destination);
+
+    const glideSource = audio.ctx.createBufferSource();
+    glideSource.buffer = buildBrownNoiseBuffer(audio.ctx, 3);
+    glideSource.loop = true;
+    const glideHP = audio.ctx.createBiquadFilter();
+    glideHP.type = "highpass";
+    glideHP.frequency.value = 85;
+    const glideLP = audio.ctx.createBiquadFilter();
+    glideLP.type = "lowpass";
+    glideLP.frequency.value = 760;
+    glideLP.Q.value = 0.7;
+    const glideFilter = audio.ctx.createBiquadFilter();
+    glideFilter.type = "bandpass";
+    glideFilter.frequency.value = 540;
+    glideFilter.Q.value = 0.58;
+    const glideGain = audio.ctx.createGain();
+    glideGain.gain.value = 0;
+    glideSource.connect(glideHP).connect(glideLP).connect(glideFilter).connect(glideGain).connect(audio.master);
+    glideSource.start();
+
+    const glideTone = audio.ctx.createOscillator();
+    glideTone.type = "triangle";
+    glideTone.frequency.value = 72;
+    const glideToneGain = audio.ctx.createGain();
+    glideToneGain.gain.value = 0;
+    glideTone.connect(glideToneGain).connect(audio.master);
+    glideTone.start();
+
+    const sweepSource = audio.ctx.createBufferSource();
+    sweepSource.buffer = buildNoiseBuffer(audio.ctx, 2.2);
+    sweepSource.loop = true;
+    const sweepFilter = audio.ctx.createBiquadFilter();
+    sweepFilter.type = "bandpass";
+    sweepFilter.frequency.value = 1300;
+    sweepFilter.Q.value = 0.95;
+    const sweepGain = audio.ctx.createGain();
+    sweepGain.gain.value = 0;
+    sweepSource.connect(sweepFilter).connect(sweepGain).connect(audio.master);
+    sweepSource.start();
+
+    audio.glideSource = glideSource;
+    audio.glideFilter = glideFilter;
+    audio.glideGain = glideGain;
+    audio.glideTone = glideTone;
+    audio.glideToneGain = glideToneGain;
+    audio.sweepSource = sweepSource;
+    audio.sweepFilter = sweepFilter;
+    audio.sweepGain = sweepGain;
+    audio.impactBuffer = buildNoiseBuffer(audio.ctx, 0.09);
+    audio.impactBodyBuffer = buildBrownNoiseBuffer(audio.ctx, 0.14);
+  }
+
+  if (audio.ctx.state === "suspended") {
+    audio.ctx.resume().catch(() => {});
+  }
+  audio.unlocked = audio.ctx.state === "running";
+}
+
+function updateAudioMix() {
+  if (!audio.unlocked || !audio.ctx || !audio.master) return;
+
+  const living = game.stones.filter((stone) => !stone.removed && stone.moving);
+  const maxSpeed = living.reduce((acc, stone) => Math.max(acc, stone.velocity.length()), 0);
+  const movingFactor = clamp((maxSpeed - 0.08) / 2.8, 0, 1);
+
+  const aiTurn = game.mode === "1p" && game.activeSide === 1;
+  const sweepLevel = game.shotState === "running" ? (aiTurn ? game.sweep.aiBoost : game.sweep.boost) : 0;
+
+  const now = audio.ctx.currentTime;
+  if (!game.soundEnabled) {
+    audio.glideGain.gain.setTargetAtTime(0, now, 0.03);
+    audio.sweepGain.gain.setTargetAtTime(0, now, 0.03);
+    if (audio.glideToneGain) audio.glideToneGain.gain.setTargetAtTime(0, now, 0.03);
+    return;
+  }
+
+  const glideTarget = movingFactor * 0.12;
+  const sweepTarget = clamp(sweepLevel, 0, 1) * 0.085;
+
+  audio.glideGain.gain.setTargetAtTime(glideTarget, now, 0.08);
+  audio.sweepGain.gain.setTargetAtTime(sweepTarget, now, 0.05);
+  if (audio.glideToneGain) {
+    audio.glideToneGain.gain.setTargetAtTime(movingFactor * 0.02, now, 0.08);
+    audio.glideTone.frequency.setTargetAtTime(58 + movingFactor * 36, now, 0.08);
+  }
+  audio.glideFilter.frequency.setTargetAtTime(280 + movingFactor * 560, now, 0.08);
+  audio.sweepFilter.frequency.setTargetAtTime(1000 + clamp(sweepLevel, 0, 1) * 1500, now, 0.05);
+}
+
+function playHitSound(intensity = 1, wall = false) {
+  if (!game.soundEnabled || !audio.unlocked || !audio.ctx || !audio.master) return;
+  const t = audio.ctx.currentTime;
+  if (t - audio.lastHitAt < 0.016) return;
+  audio.lastHitAt = t;
+
+  const impact = clamp(intensity, 0.35, 2.3);
+  const ctx = audio.ctx;
+
+  const crackSrc = ctx.createBufferSource();
+  crackSrc.buffer = audio.impactBuffer || buildNoiseBuffer(ctx, 0.09);
+  const crackHP = ctx.createBiquadFilter();
+  crackHP.type = "highpass";
+  crackHP.frequency.value = wall ? 850 : 1080;
+  const crackBand = ctx.createBiquadFilter();
+  crackBand.type = "bandpass";
+  crackBand.frequency.value = wall ? 1650 : 2100;
+  crackBand.Q.value = 1.35;
+  const crackGain = ctx.createGain();
+  crackGain.gain.setValueAtTime(0.0001, t);
+  crackGain.gain.exponentialRampToValueAtTime((wall ? 0.13 : 0.17) * impact, t + 0.0025);
+  crackGain.gain.exponentialRampToValueAtTime(0.0001, t + 0.045);
+  crackSrc.connect(crackHP).connect(crackBand).connect(crackGain).connect(audio.master);
+  crackSrc.start(t);
+  crackSrc.stop(t + 0.05);
+
+  const bodySrc = ctx.createBufferSource();
+  bodySrc.buffer = audio.impactBodyBuffer || buildBrownNoiseBuffer(ctx, 0.14);
+  const bodyBand = ctx.createBiquadFilter();
+  bodyBand.type = "bandpass";
+  bodyBand.frequency.value = wall ? 220 : 300;
+  bodyBand.Q.value = 0.8;
+  const bodyGain = ctx.createGain();
+  bodyGain.gain.setValueAtTime(0.0001, t);
+  bodyGain.gain.exponentialRampToValueAtTime((wall ? 0.09 : 0.12) * impact, t + 0.005);
+  bodyGain.gain.exponentialRampToValueAtTime(0.0001, t + (wall ? 0.12 : 0.16));
+  bodySrc.connect(bodyBand).connect(bodyGain).connect(audio.master);
+  bodySrc.start(t);
+  bodySrc.stop(t + (wall ? 0.13 : 0.18));
+
+  const partials = wall
+    ? [132 + Math.random() * 6, 236 + Math.random() * 8]
+    : [164 + Math.random() * 8, 292 + Math.random() * 10];
+  partials.forEach((freq, idx) => {
+    const osc = ctx.createOscillator();
+    const toneFilter = ctx.createBiquadFilter();
+    const toneGain = ctx.createGain();
+    osc.type = "triangle";
+    osc.frequency.setValueAtTime(freq, t);
+    osc.frequency.exponentialRampToValueAtTime(freq * 0.78, t + 0.18);
+    toneFilter.type = "bandpass";
+    toneFilter.frequency.value = freq * 1.9;
+    toneFilter.Q.value = 0.9;
+    toneGain.gain.setValueAtTime(0.0001, t);
+    const peak = ((wall ? 0.06 : 0.08) - idx * 0.015) * impact;
+    toneGain.gain.exponentialRampToValueAtTime(Math.max(peak, 0.012), t + 0.004 + idx * 0.002);
+    toneGain.gain.exponentialRampToValueAtTime(0.0001, t + 0.14 + idx * 0.03);
+    osc.connect(toneFilter).connect(toneGain).connect(audio.master);
+    osc.start(t);
+    osc.stop(t + 0.22 + idx * 0.03);
+  });
+
+  const click = ctx.createOscillator();
+  const clickGain = ctx.createGain();
+  click.type = "square";
+  click.frequency.setValueAtTime(wall ? 760 : 920, t);
+  click.frequency.exponentialRampToValueAtTime(wall ? 210 : 260, t + 0.02);
+  clickGain.gain.setValueAtTime(0.0001, t);
+  clickGain.gain.exponentialRampToValueAtTime((wall ? 0.03 : 0.05) * impact, t + 0.0014);
+  clickGain.gain.exponentialRampToValueAtTime(0.0001, t + 0.028);
+  click.connect(clickGain).connect(audio.master);
+  click.start(t);
+  click.stop(t + 0.03);
 }
 
 function styleModeButtons() {
@@ -385,14 +738,31 @@ function styleStonesButtons() {
 }
 
 function updateCurlReadout() {
-  const input = game.controls.curlInput;
-  const amount = Math.round(Math.abs(input) * 100);
-  if (amount < 3) {
-    el.curlValueLabel.textContent = "Straight (0%)";
-    return;
+  const profile = getCurlProfile(game.controls.curlInput);
+  game.controls.curlInput = profile.quantized;
+  el.curlSlider.value = String(curlInputToStep(profile.quantized));
+
+  if (profile.tier === 0) {
+    el.curlValueLabel.textContent = "No Handle";
+  } else {
+    const tierName = profile.tier === 1 ? "Low" : profile.tier === 2 ? "Standard" : "High";
+    el.curlValueLabel.textContent = `${profile.directionLabel} • ${tierName}`;
   }
-  const dir = input < 0 ? "CCW" : "CW";
-  el.curlValueLabel.textContent = `${dir} (${amount}%)`;
+
+  if (el.curlHelpText) {
+    el.curlHelpText.textContent = describeCurlGuidance(profile);
+  }
+}
+
+function applyStoneSpinProfile(stone, input) {
+  const profile = getCurlProfile(input);
+  stone.spinSign = profile.direction;
+  stone.spinStrength = profile.visualStrength;
+  stone.spinTier = profile.tier;
+  stone.curlFactor = profile.curlFactor;
+  stone.frictionScale = profile.frictionScale;
+  stone.noHandlePhase = stone.noHandlePhase ?? Math.random() * Math.PI * 2;
+  stone.noHandleBias = stone.noHandleBias ?? (Math.random() - 0.5) * 0.03;
 }
 
 function setThrowButtonReady(ready) {
@@ -420,20 +790,49 @@ function updateStrategyViewButton() {
     btn.classList.toggle("text-white", available && game.strategyView);
     btn.classList.toggle("bg-white/90", !(available && game.strategyView));
     btn.classList.toggle("text-sky-900", !(available && game.strategyView));
-    btn.textContent = available && game.strategyView ? "👁 Return" : "👁 House";
+    const label = btn.querySelector(".strategy-view-label");
+    if (label) {
+      label.textContent = available && game.strategyView ? "Return" : "House";
+    }
   });
 }
 
 function updateFastForwardButton() {
   const available = isAIThrowInProgress();
-  if (!available) game.fastForward = false;
+  if (!available) game.fastForwardMultiplier = 1;
 
+  const boosted = available && game.fastForwardMultiplier > 1;
   el.fastForwardBtn.classList.toggle("hidden", !available);
-  el.fastForwardBtn.classList.toggle("bg-emerald-600", available && game.fastForward);
-  el.fastForwardBtn.classList.toggle("text-white", available && game.fastForward);
-  el.fastForwardBtn.classList.toggle("bg-emerald-50/95", !(available && game.fastForward));
-  el.fastForwardBtn.classList.toggle("text-emerald-900", !(available && game.fastForward));
-  el.fastForwardBtn.textContent = available && game.fastForward ? "⏩ 2x On" : "⏩ 2x";
+  el.fastForwardBtn.classList.toggle("inline-flex", available);
+  el.fastForwardBtn.classList.toggle("bg-emerald-600", boosted);
+  el.fastForwardBtn.classList.toggle("text-white", boosted);
+  el.fastForwardBtn.classList.toggle("bg-emerald-50/95", !boosted);
+  el.fastForwardBtn.classList.toggle("text-emerald-900", !boosted);
+  if (el.fastForwardLabel) {
+    el.fastForwardLabel.textContent = `${game.fastForwardMultiplier}X`;
+  }
+}
+
+function updateSoundToggleButton() {
+  const on = game.soundEnabled;
+  el.soundToggleBtn.classList.toggle("bg-sky-50/95", on);
+  el.soundToggleBtn.classList.toggle("text-sky-900", on);
+  el.soundToggleBtn.classList.toggle("border-sky-300", on);
+  el.soundToggleBtn.classList.toggle("bg-slate-100/95", !on);
+  el.soundToggleBtn.classList.toggle("text-slate-600", !on);
+  el.soundToggleBtn.classList.toggle("border-slate-300", !on);
+  if (el.soundToggleLabel) {
+    el.soundToggleLabel.textContent = on ? "On" : "Off";
+  }
+  if (el.soundToggleIcon) {
+    el.soundToggleIcon.textContent = on ? "volume_up" : "volume_off";
+  }
+}
+
+function updateSoundTogglePosition() {
+  if (!el.soundToggleBtn || !el.hudOverlay) return;
+  const top = el.hudOverlay.offsetTop + el.hudOverlay.offsetHeight + 8;
+  el.soundToggleBtn.style.top = `${Math.round(top)}px`;
 }
 
 function resetBoundaryAlerts() {
@@ -739,7 +1138,7 @@ function initThree() {
       emissiveIntensity: 0
     })
   );
-  endWallTop.position.set(0, BACK_LINE_Y + 0.035, 0.15);
+  endWallTop.position.set(0, END_WALL_Y + 0.035, 0.15);
   scene.add(endWallTop);
 
   broomMesh = new THREE.Group();
@@ -770,9 +1169,10 @@ function initThree() {
 
 function buildRinkTexture() {
   const texCanvas = document.createElement("canvas");
-  texCanvas.width = 1024;
-  texCanvas.height = 4096;
+  texCanvas.width = 1536;
+  texCanvas.height = 6144;
   const ctx = texCanvas.getContext("2d");
+  ctx.imageSmoothingEnabled = true;
 
   const iceGradient = ctx.createLinearGradient(0, 0, 0, texCanvas.height);
   iceGradient.addColorStop(0, "#ffffff");
@@ -823,13 +1223,49 @@ function buildRinkTexture() {
     });
   };
 
+  const drawHouseGuides = (teeY) => {
+    const centerX = toX(0);
+    const teeLineY = toY(teeY);
+    const buttonGapRadius = 0.27;
+    const buttonHalfX = scaleRX(buttonGapRadius) + 1;
+    const buttonHalfY = scaleRY(buttonGapRadius) + 1;
+    const leftX = toX(-SHEET_WIDTH / 2);
+    const rightX = toX(SHEET_WIDTH / 2);
+
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = "#6b7280";
+    ctx.beginPath();
+    ctx.moveTo(leftX, teeLineY);
+    ctx.lineTo(centerX - buttonHalfX, teeLineY);
+    ctx.moveTo(centerX + buttonHalfX, teeLineY);
+    ctx.lineTo(rightX, teeLineY);
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.moveTo(centerX, toY(teeY - HOUSE_RADIUS));
+    ctx.lineTo(centerX, teeLineY - buttonHalfY);
+    ctx.moveTo(centerX, teeLineY + buttonHalfY);
+    ctx.lineTo(centerX, toY(teeY + HOUSE_RADIUS));
+    ctx.stroke();
+  };
+
+  const drawButtonMask = (teeY) => {
+    const x = toX(0);
+    const y = toY(teeY);
+    const maskR = 0.225;
+    ctx.beginPath();
+    ctx.fillStyle = "#ffffff";
+    ctx.ellipse(x, y, scaleRX(maskR), scaleRY(maskR), 0, 0, Math.PI * 2);
+    ctx.fill();
+  };
+
   ctx.lineWidth = 8;
   ctx.strokeStyle = "#0f172a";
   ctx.strokeRect(4, 4, texCanvas.width - 8, texCanvas.height - 8);
 
   ctx.lineWidth = 6;
   ctx.strokeStyle = "#0f172a";
-  [RELEASE_LINE_Y, FAR_HOG_Y, TEE_Y, -TEE_Y, BACK_LINE_Y, -BACK_LINE_Y].forEach((y) => {
+  [RELEASE_LINE_Y, FAR_HOG_Y, -TEE_Y, -BACK_LINE_Y].forEach((y) => {
     ctx.beginPath();
     ctx.moveTo(toX(-SHEET_WIDTH / 2), toY(y));
     ctx.lineTo(toX(SHEET_WIDTH / 2), toY(y));
@@ -844,9 +1280,26 @@ function buildRinkTexture() {
 
   drawHouse(TEE_Y);
   drawHouse(-TEE_Y);
+  drawHouseGuides(TEE_Y);
+  drawHouseGuides(-TEE_Y);
+
+  // Back-line for scoring house: thin gray out-of-bounds indicator just above the outer ring.
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = "#6b7280";
+  ctx.beginPath();
+  ctx.moveTo(toX(-SHEET_WIDTH / 2), toY(BACK_LINE_Y));
+  ctx.lineTo(toX(SHEET_WIDTH / 2), toY(BACK_LINE_Y));
+  ctx.stroke();
+
+  // Keep all guide lines out of the button (innermost white circle).
+  drawButtonMask(TEE_Y);
+  drawButtonMask(-TEE_Y);
 
   const texture = new THREE.CanvasTexture(texCanvas);
   texture.colorSpace = THREE.SRGBColorSpace;
+  texture.minFilter = THREE.LinearMipmapLinearFilter;
+  texture.magFilter = THREE.LinearFilter;
+  texture.anisotropy = renderer ? Math.min(8, renderer.capabilities.getMaxAnisotropy()) : 1;
   texture.needsUpdate = true;
   return texture;
 }
@@ -858,6 +1311,7 @@ function resizeRenderer() {
   renderer.setSize(width, height, false);
   camera.aspect = width / height;
   camera.updateProjectionMatrix();
+  updateSoundTogglePosition();
 }
 
 function startMatchFromForm() {
@@ -921,7 +1375,7 @@ function startNextShot() {
   hideEndReviewPanel();
   cleanupDeferredRemovalsForTurnStart();
   game.strategyView = false;
-  game.fastForward = false;
+  game.fastForwardMultiplier = 1;
   updateStrategyViewButton();
   updateFastForwardButton();
 
@@ -986,8 +1440,8 @@ function beginDeliveryPhase({ powerPct, curlInput, isAI, aiSweep = 0.4 }) {
   if (!game.activeStone) return;
 
   game.controls.powerPct = powerPct;
-  game.controls.curlInput = clamp(curlInput, -1, 1);
-  el.curlSlider.value = String(Math.round(game.controls.curlInput * 100));
+  game.controls.curlInput = normalizeCurlInput(curlInput);
+  el.curlSlider.value = String(curlInputToStep(game.controls.curlInput));
   updateCurlReadout();
 
   const stone = game.activeStone;
@@ -996,8 +1450,7 @@ function beginDeliveryPhase({ powerPct, curlInput, isAI, aiSweep = 0.4 }) {
   stone.velocity.set(0, DELIVERY_SPEED);
   stone.moving = true;
   stone.activeThisShot = true;
-  stone.spinSign = -Math.sign(game.controls.curlInput) || 1;
-  stone.spinStrength = Math.abs(game.controls.curlInput);
+  applyStoneSpinProfile(stone, game.controls.curlInput);
   stone.targetSpeed = powerPctToSpeed(powerPct);
   stone.initialSpeed = stone.targetSpeed;
   stone.crossedFarHog = false;
@@ -1130,14 +1583,22 @@ function estimatePowerPct(targetY, shotType, lateralDelta, sweepLevel) {
 
 function estimateCurlInput(startX, targetX, shotType) {
   const delta = targetX - startX;
-  let signed = clamp(delta * 0.7, -1, 1);
+  const absDelta = Math.abs(delta);
+  if (absDelta < 0.08) return 0;
 
-  if (Math.abs(delta) < 0.08) signed = 0;
-  if (shotType === "takeout") signed *= 0.5;
-  if (shotType === "guard") signed *= 1.1;
+  let tier = 2;
+  if (shotType === "takeout") {
+    tier = absDelta > 0.35 ? 2 : 3;
+  } else if (shotType === "guard") {
+    tier = absDelta > 0.46 ? 1 : 2;
+  } else {
+    if (absDelta > 0.52) tier = 1;
+    else if (absDelta > 0.24) tier = 2;
+    else tier = 3;
+  }
 
-  if (Math.abs(signed) < CURL_DEAD_ZONE) return 0;
-  return clamp(signed, -0.85, 0.85);
+  const sign = Math.sign(delta) || 1;
+  return sign * (tier / 3);
 }
 
 function createStone(side) {
@@ -1158,9 +1619,14 @@ function createStone(side) {
     initialSpeed: 0,
     spinSign: 1,
     spinStrength: 0,
+    spinTier: 0,
+    curlFactor: 0,
+    frictionScale: 1.06,
     handleSpin: 0,
     handleIdlePhase: Math.random() * Math.PI * 2,
     idleSpinDir: Math.random() < 0.5 ? -1 : 1,
+    noHandlePhase: Math.random() * Math.PI * 2,
+    noHandleBias: (Math.random() - 0.5) * 0.03,
     distanceTravelled: 0,
     lowSpeedTime: 0,
     aiSweep: 0.3,
@@ -1230,7 +1696,7 @@ function removeStoneMesh(stone) {
 
 function loop(now) {
   const rawDt = clamp((now - lastFrameTime) / 1000, 0, 0.03);
-  const simSpeed = isAIThrowInProgress() && game.fastForward ? 2 : 1;
+  const simSpeed = isAIThrowInProgress() ? game.fastForwardMultiplier : 1;
   const dt = clamp(rawDt * simSpeed, 0, 0.06);
   lastFrameTime = now;
 
@@ -1245,6 +1711,7 @@ function update(dt) {
     game.cameraMode = "overview";
     updateStrategyViewButton();
     updateFastForwardButton();
+    updateAudioMix();
     updateCamera(dt);
     return;
   }
@@ -1261,6 +1728,7 @@ function update(dt) {
   updatePhysics(dt);
   updateFlashingStones(dt);
   updateBroom(dt);
+  updateAudioMix();
   updateCamera(dt);
 
   maybeResolveShotStop();
@@ -1270,8 +1738,7 @@ function updateDelivery(dt) {
   const stone = game.activeStone;
   if (!stone || stone.removed) return;
 
-  stone.spinSign = -Math.sign(game.controls.curlInput) || 1;
-  stone.spinStrength = Math.abs(game.controls.curlInput);
+  applyStoneSpinProfile(stone, game.controls.curlInput);
 
   const speed = stone.velocity.length();
   const accel = 2.1;
@@ -1318,9 +1785,10 @@ function updatePhysics(dt) {
     const sweepBoost = resolveSweepBoost(stone);
     const lowSpeedFrictionGain = 1 + clamp((1.25 - speed) / 1.25, 0, 1) * 1.4;
     const backendGain = stone.position.y > FAR_HOG_Y ? 1.15 : 1;
+    const spinFrictionScale = stone.frictionScale ?? 1;
     const mu = clamp(
-      BASE_MU * (1 - sweepBoost * 0.45) * lowSpeedFrictionGain * backendGain,
-      0.007,
+      BASE_MU * spinFrictionScale * (1 - sweepBoost * 0.45) * lowSpeedFrictionGain * backendGain,
+      0.0065,
       BASE_MU * 2.7
     );
 
@@ -1334,58 +1802,78 @@ function updatePhysics(dt) {
       stone.velocity.copy(dir.multiplyScalar(nextSpeed));
     }
 
-    if (stone.spinStrength > CURL_DEAD_ZONE && stone.velocity.lengthSq() > 0.03) {
+    if (stone.velocity.lengthSq() > 0.03) {
       const velDir = stone.velocity.clone().normalize();
-      const perp = new THREE.Vector2(-velDir.y, velDir.x);
-      const progress = clamp((stone.position.y - RELEASE_LINE_Y) / (TEE_Y - RELEASE_LINE_Y + 8), 0, 1);
-      const lateCurlGain = 0.08 + progress * 0.68;
-      const speedLoss = clamp(
-        (stone.initialSpeed - stone.velocity.length()) / Math.max(stone.initialSpeed, 0.2),
-        0,
-        1.1
-      );
-      const curlAccel =
-        CURL_COEFFICIENT *
-        stone.spinStrength *
-        stone.spinSign *
-        (lateCurlGain + 0.22 + speedLoss * 0.36);
-      stone.velocity.addScaledVector(perp, curlAccel * dt);
+      const rightPerp = new THREE.Vector2(velDir.y, -velDir.x);
+      if (stone.spinTier > 0) {
+        const progress = clamp((stone.position.y - RELEASE_LINE_Y) / (TEE_Y - RELEASE_LINE_Y + 8), 0, 1);
+        const lateCurlGain = 0.05 + progress * 0.46;
+        const speedLoss = clamp(
+          (stone.initialSpeed - stone.velocity.length()) / Math.max(stone.initialSpeed, 0.2),
+          0,
+          1.1
+        );
+        const curlAccel =
+          CURL_COEFFICIENT * stone.curlFactor * stone.spinSign * (lateCurlGain + 0.11 + speedLoss * 0.22);
+        stone.velocity.addScaledVector(rightPerp, curlAccel * dt);
+      } else {
+        // No-handle shots are intentionally less predictable with gentle side-to-side wander.
+        const oscillation = Math.sin(stone.noHandlePhase + stone.distanceTravelled * 3.4);
+        const randomBias = stone.noHandleBias * (0.28 + speed * 0.18);
+        const instabilityAccel = oscillation * 0.01 + randomBias;
+        stone.velocity.addScaledVector(rightPerp, instabilityAccel * dt);
+      }
     }
 
     const movement = stone.velocity.clone().multiplyScalar(dt);
     stone.position.add(movement);
     stone.distanceTravelled += movement.length();
+
     const speedPct = clamp(stone.velocity.length() / 3, 0, 1);
     const visualHandleRate =
       stone.idleSpinDir * HANDLE_IDLE_ROTATION_SPEED * (0.45 + speedPct * 0.55) +
       stone.spinSign * stone.spinStrength * 7;
     stone.handleSpin += visualHandleRate * dt;
     const microT = performance.now() * 0.009 + stone.handleIdlePhase;
-    const microTilt = (0.012 + speedPct * 0.02) * (stone.spinStrength < CURL_DEAD_ZONE ? 1.2 : 1);
+    const microTilt = (0.012 + speedPct * 0.02) * (stone.spinTier === 0 ? 1.2 : 1);
 
-    if (stone.position.x <= -SHEET_WIDTH / 2 + STONE_RADIUS + SIDEWALL_HIT_MARGIN) {
-      stone.position.x = -SHEET_WIDTH / 2 + STONE_RADIUS;
-      stone.velocity.x = Math.abs(stone.velocity.x) * 0.22;
-      stone.velocity.y *= 0.9;
+    const leftWallLimit = -SHEET_WIDTH / 2 + STONE_RADIUS;
+    const rightWallLimit = SHEET_WIDTH / 2 - STONE_RADIUS;
+    const topEndWallLimit = END_WALL_Y - STONE_RADIUS;
+
+    if (stone.position.x <= leftWallLimit + SIDEWALL_HIT_MARGIN && stone.velocity.x < 0) {
+      const impact = Math.abs(stone.velocity.x) + Math.abs(stone.velocity.y) * 0.25;
+      stone.position.x = leftWallLimit + WALL_SEPARATION_EPS;
+      stone.velocity.x = Math.abs(stone.velocity.x) * SIDEWALL_RESTITUTION;
+      stone.velocity.y *= WALL_TANGENTIAL_DAMP;
       markSideWallAlert(false);
       flagStoneForDeferredRemoval(stone, "sidewall");
+      playHitSound(impact * 0.7, true);
     }
 
-    if (stone.position.x >= SHEET_WIDTH / 2 - STONE_RADIUS - SIDEWALL_HIT_MARGIN) {
-      stone.position.x = SHEET_WIDTH / 2 - STONE_RADIUS;
-      stone.velocity.x = -Math.abs(stone.velocity.x) * 0.22;
-      stone.velocity.y *= 0.9;
+    if (stone.position.x >= rightWallLimit - SIDEWALL_HIT_MARGIN && stone.velocity.x > 0) {
+      const impact = Math.abs(stone.velocity.x) + Math.abs(stone.velocity.y) * 0.25;
+      stone.position.x = rightWallLimit - WALL_SEPARATION_EPS;
+      stone.velocity.x = -Math.abs(stone.velocity.x) * SIDEWALL_RESTITUTION;
+      stone.velocity.y *= WALL_TANGENTIAL_DAMP;
       markSideWallAlert(true);
       flagStoneForDeferredRemoval(stone, "sidewall");
+      playHitSound(impact * 0.7, true);
     }
 
-    if (stone.position.y >= BACK_LINE_Y - STONE_RADIUS - BACKWALL_HIT_MARGIN) {
-      stone.position.y = BACK_LINE_Y - STONE_RADIUS;
-      stone.velocity.y = -Math.abs(stone.velocity.y) * 0.22;
-      stone.velocity.x *= 0.9;
+    if (stone.position.y - STONE_RADIUS >= BACK_LINE_Y) {
+      flagStoneForDeferredRemoval(stone, "backline");
+    }
+
+    if (stone.position.y >= topEndWallLimit - BACKWALL_HIT_MARGIN && stone.velocity.y > 0) {
+      const impact = Math.abs(stone.velocity.y) + Math.abs(stone.velocity.x) * 0.25;
+      stone.position.y = topEndWallLimit - WALL_SEPARATION_EPS;
+      stone.velocity.y = -Math.abs(stone.velocity.y) * ENDWALL_RESTITUTION;
+      stone.velocity.x *= WALL_TANGENTIAL_DAMP;
       markEndWallAlert();
       flagStoneForDeferredRemoval(stone, "endwall");
-    } else if (stone.position.y < -BACK_LINE_Y - STONE_RADIUS) {
+      playHitSound(impact * 0.78, true);
+    } else if (stone.position.y < -END_WALL_Y - STONE_RADIUS) {
       removeStone(stone);
     }
 
@@ -1448,6 +1936,7 @@ function resolveCollisions() {
         b.moving = true;
         a.touchedStone = true;
         b.touchedStone = true;
+        playHitSound(Math.abs(velAlongNormal) * 1.1, false);
       }
 
       syncStoneMesh(a);
@@ -1466,7 +1955,7 @@ function enforceStoppedRules(stone) {
     }
   }
 
-  if (stone.position.y > BACK_LINE_Y || stone.position.y < -BACK_LINE_Y) {
+  if (stone.position.y - STONE_RADIUS > BACK_LINE_Y || stone.position.y + STONE_RADIUS < -BACK_LINE_Y) {
     removeStone(stone);
   }
 }
@@ -1496,6 +1985,7 @@ function maybeResolveShotStop() {
     if (!game.started) return;
     game.currentShot += 1;
     if (game.currentShot >= totalShots()) {
+      cleanupDeferredRemovalsForTurnStart();
       finishEnd();
     } else {
       startNextShot();
@@ -1527,7 +2017,7 @@ function finishEnd() {
   game.shotState = "end_review";
   game.cameraMode = "house_overhead";
   game.strategyView = false;
-  game.fastForward = false;
+  game.fastForwardMultiplier = 1;
   game.awaitingShotResolution = false;
   broomMesh.visible = false;
   showControlPanel(null);
@@ -1552,7 +2042,7 @@ function finishMatch() {
   hideEndReviewPanel();
   showControlPanel(null);
   broomMesh.visible = false;
-  game.fastForward = false;
+  game.fastForwardMultiplier = 1;
   updateFastForwardButton();
   game.shotState = "game_over";
   game.cameraMode = "house_overhead";
@@ -1569,7 +2059,7 @@ function resetStonesForNextEnd() {
   game.shotState = "idle";
   game.awaitingShotResolution = false;
   game.pendingEndReview = null;
-  game.fastForward = false;
+  game.fastForwardMultiplier = 1;
   game.sweep.boost = 0;
   game.sweep.aiBoost = 0;
 }
@@ -1684,6 +2174,19 @@ function updateHUD() {
     const shotNum = clamp(game.currentShot + 1, 1, shotsPerEnd);
     el.shotLabel.textContent = `Stone ${shotNum} / ${shotsPerEnd}`;
   }
+
+  if (el.team0Card && el.team1Card) {
+    const shouldHighlightTurn = game.started && !["end_review", "game_over"].includes(game.shotState);
+    if (!shouldHighlightTurn) {
+      el.team0Card.style.opacity = "1";
+      el.team1Card.style.opacity = "1";
+    } else {
+      el.team0Card.style.opacity = game.activeSide === 0 ? "1" : "0.45";
+      el.team1Card.style.opacity = game.activeSide === 1 ? "1" : "0.45";
+    }
+  }
+
+  updateSoundTogglePosition();
 
   if (!game.started) {
     el.turnLabel.textContent = "Current throw: waiting for new game";
