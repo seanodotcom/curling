@@ -164,13 +164,15 @@ const el = {
 
   powerControls: document.getElementById("power-controls"),
   powerSlider: document.getElementById("power-slider"),
-  powerFill: document.getElementById("power-fill"),
+  powerReadout: document.getElementById("power-readout"),
+  powerBackBtn: document.getElementById("power-back-btn"),
   launchBtn: document.getElementById("launch-btn"),
 
   curlControls: document.getElementById("curl-controls"),
   curlHelpText: document.getElementById("curl-help-text"),
   curlValueLabel: document.getElementById("curl-value-label"),
   curlSlider: document.getElementById("curl-slider"),
+  curlBackBtn: document.getElementById("curl-back-btn"),
   throwBtn: document.getElementById("throw-btn"),
 
   sweepControls: document.getElementById("sweep-controls"),
@@ -349,7 +351,7 @@ function initUI() {
 
   el.powerSlider.addEventListener("input", () => {
     game.controls.powerPct = Number(el.powerSlider.value) / 100;
-    el.powerFill.style.width = `${el.powerSlider.value}%`;
+    updatePowerMeterVisual();
   });
 
   el.launchBtn.addEventListener("click", () => {
@@ -361,12 +363,30 @@ function initUI() {
     el.statusLabel.textContent = "Set curl, then press Throw.";
   });
 
+  el.powerBackBtn.addEventListener("click", () => {
+    if (game.shotState !== "power") return;
+    game.shotState = "positioning";
+    showControlPanel("position");
+    setThrowButtonReady(false);
+    updateStrategyViewButton();
+    el.statusLabel.textContent = "Slide left or right and lock your position.";
+  });
+
   el.curlSlider.addEventListener("input", () => {
     game.controls.curlInput = stepToCurlInput(Number(el.curlSlider.value));
     updateCurlReadout();
     if (game.activeStone && game.shotState === "delivery") {
       applyStoneSpinProfile(game.activeStone, game.controls.curlInput);
     }
+  });
+
+  el.curlBackBtn.addEventListener("click", () => {
+    if (game.shotState !== "curl_setup") return;
+    game.shotState = "power";
+    showControlPanel("power");
+    setThrowButtonReady(false);
+    updateStrategyViewButton();
+    el.statusLabel.textContent = "Set your release speed.";
   });
 
   el.throwBtn.addEventListener("click", () => {
@@ -495,6 +515,7 @@ function initUI() {
   el.team1InlineLabel.textContent = game.mode === "1p" ? "AI (Yellow)" : "P2 (Yellow)";
   styleEndsButtons();
   styleStonesButtons();
+  updatePowerMeterVisual();
   updateCurlReadout();
   setThrowButtonReady(false);
   updateStrategyViewButton();
@@ -772,6 +793,33 @@ function styleStonesButtons() {
     btn.classList.toggle("bg-white", !selected);
     btn.classList.toggle("text-sky-900", !selected);
   });
+}
+
+function updatePowerMeterVisual() {
+  if (!el.powerSlider) return;
+  const value = clamp(Number(el.powerSlider.value), 10, 100);
+  const normalized = clamp((value - 10) / 90, 0, 1);
+  const tier = normalized < 0.34 ? "Soft" : normalized < 0.67 ? "Normal" : "Hard";
+
+  const sliderWidth = el.powerSlider.clientWidth;
+  const thumbPx = 20;
+  let fillPercent = value;
+  if (sliderWidth > thumbPx) {
+    const fillPx = thumbPx * 0.5 + normalized * (sliderWidth - thumbPx);
+    fillPercent = (fillPx / sliderWidth) * 100;
+  }
+  const fillPct = `${clamp(fillPercent, 0, 100).toFixed(3)}%`;
+
+  el.powerSlider.style.setProperty("--power-fill", fillPct);
+  const glowSize = 6 + normalized * 12;
+  const glowAlpha = 0.12 + normalized * 0.2;
+  el.powerSlider.style.boxShadow = `0 0 ${glowSize.toFixed(1)}px rgba(249,115,22,${glowAlpha.toFixed(3)})`;
+
+  if (el.powerReadout) {
+    el.powerReadout.textContent = `${Math.round(value)}% ${tier}`;
+    const hue = Math.round(205 - normalized * 175);
+    el.powerReadout.style.color = `hsl(${hue} 85% 34%)`;
+  }
 }
 
 function updateCurlReadout() {
@@ -1348,6 +1396,7 @@ function resizeRenderer() {
   renderer.setSize(width, height, false);
   camera.aspect = width / height;
   camera.updateProjectionMatrix();
+  updatePowerMeterVisual();
   updateSoundTogglePosition();
 }
 
@@ -1390,7 +1439,7 @@ function startMatchFromForm() {
 
   el.positionSlider.value = "0";
   el.powerSlider.value = "65";
-  el.powerFill.style.width = "65%";
+  updatePowerMeterVisual();
   el.curlSlider.value = "0";
   updateCurlReadout();
 
@@ -1440,7 +1489,7 @@ function startNextShot() {
   game.controls.curlInput = 0;
   el.positionSlider.value = "0";
   el.powerSlider.value = "65";
-  el.powerFill.style.width = "65%";
+  updatePowerMeterVisual();
   el.curlSlider.value = "0";
   updateCurlReadout();
 
