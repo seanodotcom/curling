@@ -504,11 +504,18 @@ function initUI() {
 
 function installAudioUnlockHandlers() {
   const unlock = () => {
-    if (game.soundEnabled) ensureAudioEngine();
+    if (!game.soundEnabled) return;
+    if (audio.unlocked && audio.ctx?.state === "running") return;
+    ensureAudioEngine();
   };
-  window.addEventListener("pointerdown", unlock, { once: true, passive: true });
-  window.addEventListener("touchstart", unlock, { once: true, passive: true });
-  window.addEventListener("keydown", unlock, { once: true });
+  window.addEventListener("pointerdown", unlock, { passive: true });
+  window.addEventListener("touchstart", unlock, { passive: true });
+  window.addEventListener("keydown", unlock);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible" && game.soundEnabled) {
+      ensureAudioEngine();
+    }
+  });
 }
 
 function buildNoiseBuffer(ctx, seconds = 2) {
@@ -534,12 +541,24 @@ function buildBrownNoiseBuffer(ctx, seconds = 2) {
   return buffer;
 }
 
+function syncAudioRunningState() {
+  if (!audio.ctx) {
+    audio.unlocked = false;
+    return false;
+  }
+  audio.unlocked = audio.ctx.state === "running";
+  return audio.unlocked;
+}
+
 function ensureAudioEngine() {
   const AudioCtx = window.AudioContext || window.webkitAudioContext;
   if (!AudioCtx) return;
 
   if (!audio.ctx) {
     audio.ctx = new AudioCtx();
+    audio.ctx.onstatechange = () => {
+      syncAudioRunningState();
+    };
     audio.master = audio.ctx.createGain();
     audio.master.gain.value = 0.55;
     audio.master.connect(audio.ctx.destination);
@@ -595,14 +614,29 @@ function ensureAudioEngine() {
     audio.impactBodyBuffer = buildBrownNoiseBuffer(audio.ctx, 0.14);
   }
 
-  if (audio.ctx.state === "suspended") {
-    audio.ctx.resume().catch(() => {});
+  const markRunning = () => {
+    if (syncAudioRunningState()) {
+      updateAudioMix();
+    }
+  };
+
+  if (audio.ctx.state !== "running") {
+    const resumePromise = audio.ctx.resume();
+    if (resumePromise && typeof resumePromise.then === "function") {
+      resumePromise.then(markRunning).catch(() => {
+        syncAudioRunningState();
+      });
+    } else {
+      markRunning();
+    }
+  } else {
+    markRunning();
   }
-  audio.unlocked = audio.ctx.state === "running";
 }
 
 function updateAudioMix() {
-  if (!audio.unlocked || !audio.ctx || !audio.master) return;
+  if (!audio.ctx || !audio.master) return;
+  if (!audio.unlocked && !syncAudioRunningState()) return;
 
   const living = game.stones.filter((stone) => !stone.removed && stone.moving);
   const maxSpeed = living.reduce((acc, stone) => Math.max(acc, stone.velocity.length()), 0);
@@ -633,7 +667,8 @@ function updateAudioMix() {
 }
 
 function playHitSound(intensity = 1, wall = false) {
-  if (!game.soundEnabled || !audio.unlocked || !audio.ctx || !audio.master) return;
+  if (!game.soundEnabled || !audio.ctx || !audio.master) return;
+  if (!audio.unlocked && !syncAudioRunningState()) return;
   const t = audio.ctx.currentTime;
   if (t - audio.lastHitAt < 0.016) return;
   audio.lastHitAt = t;
@@ -1315,6 +1350,10 @@ function resizeRenderer() {
 }
 
 function startMatchFromForm() {
+  if (game.soundEnabled) {
+    ensureAudioEngine();
+  }
+
   game.mode = game.mode || "1p";
   game.maxEnds = game.maxEnds || 5;
   game.stonesPerSide = sanitizeStonesPerSide(game.stonesPerSide);
