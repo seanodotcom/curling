@@ -34,9 +34,12 @@ const END_WALL_Y = HALF_LENGTH - 0.05;
 const G = 9.81;
 const BASE_MU = 0.0142;
 const MIN_SHOT_SPEED = 1.55;
-const MAX_SHOT_SPEED = 3.1;
-const DELIVERY_SPEED = 1.2;
-const POWER_CURVE = 1.55;
+const MAX_SHOT_SPEED = 3.6;
+const DELIVERY_SPEED = 1.35;
+const POWER_CURVE = 1.45;
+const HIGH_POWER_BOOST_START = 0.82;
+const HIGH_POWER_BOOST_CURVE = 1.25;
+const HIGH_POWER_BOOST_MAX = 0.95;
 const CURL_COEFFICIENT = 0.02;
 const STOP_SPEED = 0.012;
 const LOW_SPEED_SETTLE = 0.09;
@@ -49,8 +52,9 @@ const SIDEWALL_ALERT_COLOR = 0xdc2626;
 const SIDEWALL_HIT_MARGIN = 0.03;
 const BACKWALL_HIT_MARGIN = 0.035;
 const SIDEWALL_RESTITUTION = 0.72;
-const ENDWALL_RESTITUTION = 0.64;
+const ENDWALL_RESTITUTION = 0.1;
 const WALL_TANGENTIAL_DAMP = 0.985;
+const ENDWALL_TANGENTIAL_DAMP = 0.22;
 const WALL_SEPARATION_EPS = 0.003;
 
 const SIDE_COLORS = [0xdc2626, 0xfacc15];
@@ -68,10 +72,24 @@ const FLAG_COLOR_PALETTE = {
 
 const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
 const lerp = (a, b, t) => a + (b - a) * t;
-const powerPctToSpeed = (pct) =>
-  MIN_SHOT_SPEED + (MAX_SHOT_SPEED - MIN_SHOT_SPEED) * Math.pow(clamp(pct, 0, 1), POWER_CURVE);
-const speedToPowerPct = (speed) =>
-  Math.pow(clamp((speed - MIN_SHOT_SPEED) / (MAX_SHOT_SPEED - MIN_SHOT_SPEED), 0, 1), 1 / POWER_CURVE);
+const powerPctToSpeed = (pct) => {
+  const clamped = clamp(pct, 0, 1);
+  const baseSpeed = MIN_SHOT_SPEED + (MAX_SHOT_SPEED - MIN_SHOT_SPEED) * Math.pow(clamped, POWER_CURVE);
+  const boostT = clamp((clamped - HIGH_POWER_BOOST_START) / (1 - HIGH_POWER_BOOST_START), 0, 1);
+  const boost = Math.pow(boostT, HIGH_POWER_BOOST_CURVE) * HIGH_POWER_BOOST_MAX;
+  return baseSpeed + boost;
+};
+const speedToPowerPct = (speed) => {
+  const target = clamp(speed, MIN_SHOT_SPEED, powerPctToSpeed(1));
+  let lo = 0;
+  let hi = 1;
+  for (let i = 0; i < 18; i += 1) {
+    const mid = (lo + hi) * 0.5;
+    if (powerPctToSpeed(mid) < target) lo = mid;
+    else hi = mid;
+  }
+  return (lo + hi) * 0.5;
+};
 const sanitizeStonesPerSide = (value) => (STONE_OPTIONS.includes(value) ? value : DEFAULT_STONES_PER_SIDE);
 const normalizeCurlInput = (value) => {
   const clamped = clamp(value, -1, 1);
@@ -1947,7 +1965,7 @@ function updateDelivery(dt) {
   applyStoneSpinProfile(stone, game.controls.curlInput);
 
   const speed = stone.velocity.length();
-  const accel = 2.1;
+  const accel = 2.7;
   const nextSpeed = Math.min(stone.targetSpeed, speed + accel * dt);
   if (speed > 0.001) {
     stone.velocity.multiplyScalar(nextSpeed / speed);
@@ -2001,7 +2019,7 @@ function updatePhysics(dt) {
     const backendGain = stone.position.y > FAR_HOG_Y ? 1.15 : 1;
     const spinFrictionScale = stone.frictionScale ?? 1;
     const mu = clamp(
-      BASE_MU * spinFrictionScale * (1 - sweepBoost * 0.45) * lowSpeedFrictionGain * backendGain,
+      BASE_MU * spinFrictionScale * (1 - sweepBoost * 0.52) * lowSpeedFrictionGain * backendGain,
       0.0065,
       BASE_MU * 2.7
     );
@@ -2086,7 +2104,7 @@ function updatePhysics(dt) {
       const impact = Math.abs(stone.velocity.y) + Math.abs(stone.velocity.x) * 0.25;
       stone.position.y = topEndWallLimit - WALL_SEPARATION_EPS;
       stone.velocity.y = -Math.abs(stone.velocity.y) * ENDWALL_RESTITUTION;
-      stone.velocity.x *= WALL_TANGENTIAL_DAMP;
+      stone.velocity.x *= ENDWALL_TANGENTIAL_DAMP;
       markEndWallAlert();
       flagStoneForDeferredRemoval(stone, "endwall");
       playHitSound(impact * 0.78, true);
