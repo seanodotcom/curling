@@ -7,7 +7,7 @@ const COUNTRIES = [
   { code: "SWE", name: "Sweden", flag: "🇸🇪" },
   { code: "SUI", name: "Switzerland", flag: "🇨🇭" },
   { code: "SCO", name: "Scotland", flag: SCOTLAND_FLAG },
-  { code: "USA", name: "United States", flag: "🇺🇸" },
+  { code: "USA", name: "USA", flag: "🇺🇸" },
   { code: "NOR", name: "Norway", flag: "🇳🇴" },
   { code: "JPN", name: "Japan", flag: "🇯🇵" },
   { code: "ITA", name: "Italy", flag: "🇮🇹" }
@@ -2210,10 +2210,16 @@ function updateCamera(dt) {
     cameraTargetLook.set(0, 0, 0);
   }
 
-  if (["start", "delivery", "positioning", "power", "curl_setup"].includes(game.cameraMode) && game.activeStone && !game.activeStone.removed) {
+  if (["start", "positioning", "power", "curl_setup"].includes(game.cameraMode) && game.activeStone && !game.activeStone.removed) {
     const x = game.activeStone.position.x;
-    cameraTargetPos.set(x * 0.65, HACK_Y + 3.6, 8.9);
-    cameraTargetLook.set(x, HACK_Y + 7.5, 0);
+    cameraTargetPos.set(x * 0.62, HACK_Y - 4.8, 9.5);
+    cameraTargetLook.set(x, HACK_Y + 1.4, 0);
+  }
+
+  if (game.cameraMode === "delivery" && game.activeStone && !game.activeStone.removed) {
+    const x = game.activeStone.position.x;
+    cameraTargetPos.set(x * 0.65, HACK_Y - 2.2, 9.1);
+    cameraTargetLook.set(x, HACK_Y + 4.6, 0);
   }
 
   if (game.cameraMode === "follow" && game.activeStone && !game.activeStone.removed) {
