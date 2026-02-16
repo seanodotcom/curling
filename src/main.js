@@ -24,6 +24,7 @@ const DEFAULT_STONES_PER_SIDE = 16;
 
 const HACK_Y = -20.3;
 const RELEASE_LINE_Y = -10.0;
+const NEAR_HOG_Y = RELEASE_LINE_Y;
 const FAR_HOG_Y = 10.0;
 const TEE_Y = 20.0;
 const HOUSE_RADIUS = 1.83;
@@ -40,7 +41,9 @@ const CURL_COEFFICIENT = 0.02;
 const STOP_SPEED = 0.012;
 const LOW_SPEED_SETTLE = 0.09;
 const HANDLE_IDLE_ROTATION_SPEED = 0.11;
+const HANDLE_START_ANGLE = Math.PI * 0.5;
 const TURN_RESOLVE_DELAY_MS = 1500;
+const SWEEP_REMINDER_DELAY_MS = 2000;
 const SIDEWALL_DEFAULT_COLOR = 0x1f2937;
 const SIDEWALL_ALERT_COLOR = 0xdc2626;
 const SIDEWALL_HIT_MARGIN = 0.03;
@@ -177,6 +180,7 @@ const el = {
 
   sweepControls: document.getElementById("sweep-controls"),
   sweepPad: document.getElementById("sweep-pad"),
+  sweepMeter: document.getElementById("sweep-meter"),
   sweepFill: document.getElementById("sweep-fill"),
   strategyViewBtns: [...document.querySelectorAll(".strategy-view-btn")],
   fastForwardBtn: document.getElementById("fast-forward-btn"),
@@ -241,7 +245,10 @@ const game = {
     aiBoost: 0,
     activePointer: false,
     lastX: 0,
-    lastT: 0
+    lastT: 0,
+    nearHogCrossAt: 0,
+    userTouchedAfterHog: false,
+    reminderPulseActive: false
   }
 };
 const totalShots = () => game.stonesPerSide * 2;
@@ -448,6 +455,10 @@ function initUI() {
 
   const applySweepInput = (clientX, now = performance.now()) => {
     if (!game.sweep.activePointer || game.shotState !== "running") return;
+    if (!game.sweep.userTouchedAfterHog) {
+      game.sweep.userTouchedAfterHog = true;
+      setSweepReminderPulse(false);
+    }
     const dt = Math.max(1, now - game.sweep.lastT);
     const dx = clientX - game.sweep.lastX;
     const speedPxMs = Math.abs(dx) / dt;
@@ -468,6 +479,8 @@ function initUI() {
       }
     }
     game.sweep.activePointer = true;
+    game.sweep.userTouchedAfterHog = true;
+    setSweepReminderPulse(false);
     game.sweep.lastX = event.clientX;
     game.sweep.lastT = performance.now();
   });
@@ -492,6 +505,8 @@ function initUI() {
       event.preventDefault();
       const touch = event.touches[0];
       game.sweep.activePointer = true;
+      game.sweep.userTouchedAfterHog = true;
+      setSweepReminderPulse(false);
       game.sweep.lastX = touch.clientX;
       game.sweep.lastT = performance.now();
     },
@@ -968,9 +983,11 @@ function updateFlashingStones(dt) {
   game.stones.forEach((stone) => {
     if (stone.removed) return;
     if (!stone.flaggedForRemoval) {
+      if (stone.mesh.oobMarker) stone.mesh.oobMarker.visible = false;
       applyStoneOpacity(stone, 1);
       return;
     }
+    if (stone.mesh.oobMarker) stone.mesh.oobMarker.visible = true;
     stone.flashPhase += dt * 12;
     const alpha = clamp((Math.sin(stone.flashPhase) + 1) * 0.5, 0, 1);
     applyStoneOpacity(stone, alpha);
@@ -1144,16 +1161,38 @@ function ensureDistinctTeams() {
   el.team1Select.value = String(next);
 }
 
+function setSweepReminderPulse(active) {
+  game.sweep.reminderPulseActive = active;
+  if (!el.sweepPad) return;
+  el.sweepPad.classList.toggle("sweep-reminder-pulse", active);
+}
+
 function showControlPanel(name) {
   el.positionControls.classList.add("hidden");
   el.powerControls.classList.add("hidden");
   el.curlControls.classList.add("hidden");
   el.sweepControls.classList.add("hidden");
+  el.sweepControls.style.transition = "";
+  el.sweepControls.style.opacity = "1";
+  el.sweepControls.style.transform = "translateY(0)";
 
   if (name === "position") el.positionControls.classList.remove("hidden");
   if (name === "power") el.powerControls.classList.remove("hidden");
   if (name === "curl") el.curlControls.classList.remove("hidden");
   if (name === "sweep") el.sweepControls.classList.remove("hidden");
+  if (name !== "sweep") setSweepReminderPulse(false);
+}
+
+function showSweepControlsWithFade() {
+  showControlPanel("sweep");
+  setSweepReminderPulse(false);
+  el.sweepControls.style.opacity = "0";
+  el.sweepControls.style.transform = "translateY(7px)";
+  el.sweepControls.style.transition = "opacity 260ms ease, transform 260ms ease";
+  requestAnimationFrame(() => {
+    el.sweepControls.style.opacity = "1";
+    el.sweepControls.style.transform = "translateY(0)";
+  });
 }
 
 function initThree() {
@@ -1227,17 +1266,42 @@ function initThree() {
   scene.add(endWallTop);
 
   broomMesh = new THREE.Group();
-  const broomHead = new THREE.Mesh(
-    new THREE.BoxGeometry(0.5, 0.08, 0.04),
-    new THREE.MeshStandardMaterial({ color: 0x7dd3fc })
+  const broomShellMaterial = new THREE.MeshStandardMaterial({ color: 0x111827, roughness: 0.42, metalness: 0.18 });
+  const broomPadMaterial = new THREE.MeshStandardMaterial({
+    color: SIDE_COLORS[0],
+    roughness: 0.55,
+    metalness: 0.04
+  });
+
+  const broomHeadTop = new THREE.Mesh(
+    new THREE.CapsuleGeometry(0.035, 0.27, 10, 22),
+    broomShellMaterial
   );
+  broomHeadTop.rotation.z = Math.PI / 2;
+  broomHeadTop.position.z = 0.026;
+
+  const broomPad = new THREE.Mesh(
+    new THREE.CapsuleGeometry(0.045, 0.29, 10, 22),
+    broomPadMaterial
+  );
+  broomPad.rotation.z = Math.PI / 2;
+  broomPad.position.z = -0.02;
+
+  const broomHub = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.026, 0.032, 0.028, 18),
+    broomShellMaterial
+  );
+  broomHub.position.z = 0.056;
+
   const broomHandle = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.01, 0.01, 0.8, 8),
-    new THREE.MeshStandardMaterial({ color: 0x0f172a })
+    new THREE.CylinderGeometry(0.016, 0.016, 0.47, 12),
+    new THREE.MeshStandardMaterial({ color: 0x6b7280, roughness: 0.34, metalness: 0.22 })
   );
   broomHandle.rotation.x = Math.PI / 2;
-  broomHandle.position.z = 0.08;
-  broomMesh.add(broomHead, broomHandle);
+  broomHandle.position.z = 0.31;
+
+  broomMesh.add(broomHeadTop, broomPad, broomHub, broomHandle);
+  broomMesh.userData.padMaterial = broomPadMaterial;
   broomMesh.visible = false;
   broomMesh.position.set(0, HACK_Y + 1, 0.08);
   scene.add(broomMesh);
@@ -1466,6 +1530,9 @@ function startNextShot() {
   cleanupDeferredRemovalsForTurnStart();
   game.strategyView = false;
   game.fastForwardMultiplier = 1;
+  game.sweep.nearHogCrossAt = 0;
+  game.sweep.userTouchedAfterHog = false;
+  setSweepReminderPulse(false);
   updateStrategyViewButton();
   updateFastForwardButton();
 
@@ -1543,10 +1610,14 @@ function beginDeliveryPhase({ powerPct, curlInput, isAI, aiSweep = 0.4 }) {
   applyStoneSpinProfile(stone, game.controls.curlInput);
   stone.targetSpeed = powerPctToSpeed(powerPct);
   stone.initialSpeed = stone.targetSpeed;
+  stone.crossedNearHog = false;
   stone.crossedFarHog = false;
   stone.touchedStone = false;
   stone.distanceTravelled = 0;
   stone.aiSweep = aiSweep;
+  game.sweep.nearHogCrossAt = 0;
+  game.sweep.userTouchedAfterHog = false;
+  setSweepReminderPulse(false);
 
   game.shotState = "delivery";
   game.cameraMode = "delivery";
@@ -1704,6 +1775,7 @@ function createStone(side) {
     wasDelivered: false,
     activeThisShot: false,
     touchedStone: false,
+    crossedNearHog: false,
     crossedFarHog: false,
     targetSpeed: 0,
     initialSpeed: 0,
@@ -1748,6 +1820,7 @@ function buildStoneMesh(side) {
 
   const handlePivot = new THREE.Group();
   handlePivot.position.z = STONE_HEIGHT * 0.5 + 0.03;
+  handlePivot.rotation.z = HANDLE_START_ANGLE;
 
   const ring = new THREE.Mesh(
     new THREE.TorusGeometry(0.07, 0.015, 12, 26),
@@ -1764,7 +1837,34 @@ function buildStoneMesh(side) {
 
   group.add(handlePivot);
 
-  return { group, handlePivot };
+  const oobMarker = new THREE.Group();
+  oobMarker.position.z = STONE_HEIGHT * 0.5 + 0.2;
+
+  const oobPlate = new THREE.Mesh(
+    new THREE.CircleGeometry(0.08, 28),
+    new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.95 })
+  );
+  oobMarker.add(oobPlate);
+
+  const oobRing = new THREE.Mesh(
+    new THREE.RingGeometry(0.045, 0.068, 28),
+    new THREE.MeshBasicMaterial({ color: 0xdc2626 })
+  );
+  oobRing.position.z = 0.001;
+  oobMarker.add(oobRing);
+
+  const oobSlash = new THREE.Mesh(
+    new THREE.BoxGeometry(0.102, 0.015, 0.003),
+    new THREE.MeshBasicMaterial({ color: 0xdc2626 })
+  );
+  oobSlash.rotation.z = -Math.PI / 4;
+  oobSlash.position.z = 0.002;
+  oobMarker.add(oobSlash);
+
+  oobMarker.visible = false;
+  group.add(oobMarker);
+
+  return { group, handlePivot, oobMarker };
 }
 
 function syncStoneMesh(stone) {
@@ -1810,6 +1910,7 @@ function update(dt) {
   updateFastForwardButton();
   game.sweep.boost = Math.max(0, game.sweep.boost - 2.25 * dt);
   updateSweepBar();
+  updateSweepReminder();
 
   if (game.shotState === "delivery") {
     updateDelivery(dt);
@@ -1842,8 +1943,15 @@ function updateDelivery(dt) {
   if (stone.position.y >= RELEASE_LINE_Y) {
     game.shotState = "running";
     game.cameraMode = "follow";
+    game.sweep.nearHogCrossAt = performance.now();
     const aiTurn = game.mode === "1p" && game.activeSide === 1;
-    showControlPanel(aiTurn ? null : "sweep");
+    if (aiTurn) {
+      game.sweep.userTouchedAfterHog = true;
+      showControlPanel(null);
+    } else {
+      game.sweep.userTouchedAfterHog = false;
+      showSweepControlsWithFade();
+    }
     el.statusLabel.textContent = aiTurn ? "AI sweeping..." : "Sweep to reduce friction and carry farther.";
   }
 }
@@ -1855,6 +1963,7 @@ function updatePhysics(dt) {
   livingStones.forEach((stone) => {
     if (!stone.moving) return;
 
+    if (stone.position.y >= NEAR_HOG_Y) stone.crossedNearHog = true;
     if (stone.position.y >= FAR_HOG_Y) stone.crossedFarHog = true;
 
     const speed = stone.velocity.length();
@@ -1892,7 +2001,7 @@ function updatePhysics(dt) {
       stone.velocity.copy(dir.multiplyScalar(nextSpeed));
     }
 
-    if (stone.velocity.lengthSq() > 0.03) {
+    if (stone.crossedNearHog && stone.velocity.lengthSq() > 0.03) {
       const velDir = stone.velocity.clone().normalize();
       const rightPerp = new THREE.Vector2(velDir.y, -velDir.x);
       if (stone.spinTier > 0) {
@@ -1920,9 +2029,12 @@ function updatePhysics(dt) {
     stone.distanceTravelled += movement.length();
 
     const speedPct = clamp(stone.velocity.length() / 3, 0, 1);
+    const spinVisualRate = stone.crossedNearHog ? stone.spinSign * stone.spinStrength * 7 : 0;
+    const idleVisualRate = stone.crossedNearHog
+      ? stone.idleSpinDir * HANDLE_IDLE_ROTATION_SPEED * (0.45 + speedPct * 0.55)
+      : 0;
     const visualHandleRate =
-      stone.idleSpinDir * HANDLE_IDLE_ROTATION_SPEED * (0.45 + speedPct * 0.55) +
-      stone.spinSign * stone.spinStrength * 7;
+      idleVisualRate + spinVisualRate;
     stone.handleSpin += visualHandleRate * dt;
     const microT = performance.now() * 0.009 + stone.handleIdlePhase;
     const microTilt = (0.012 + speedPct * 0.02) * (stone.spinTier === 0 ? 1.2 : 1);
@@ -1968,7 +2080,7 @@ function updatePhysics(dt) {
     }
 
     syncStoneMesh(stone);
-    stone.mesh.handlePivot.rotation.z = stone.handleSpin;
+    stone.mesh.handlePivot.rotation.z = HANDLE_START_ANGLE + stone.handleSpin;
     stone.mesh.handlePivot.rotation.x = Math.sin(microT) * microTilt;
     stone.mesh.handlePivot.rotation.y = Math.cos(microT * 0.92) * microTilt * 0.65;
   });
@@ -2152,6 +2264,9 @@ function resetStonesForNextEnd() {
   game.fastForwardMultiplier = 1;
   game.sweep.boost = 0;
   game.sweep.aiBoost = 0;
+  game.sweep.nearHogCrossAt = 0;
+  game.sweep.userTouchedAfterHog = false;
+  setSweepReminderPulse(false);
 }
 
 function getStonesInHouse() {
@@ -2175,11 +2290,26 @@ function updateBroom(dt) {
     return;
   }
 
+  const proximityLimit = STONE_RADIUS * 2 * 1.5;
+  const nearOtherStone = game.stones.some((stone) => {
+    if (stone === game.activeStone || stone.removed) return false;
+    return stone.position.distanceTo(game.activeStone.position) <= proximityLimit;
+  });
+  if (nearOtherStone) {
+    broomMesh.visible = false;
+    game.sweep.boost = clamp(game.sweep.boost - dt * 0.08, 0, 1);
+    return;
+  }
+
   broomMesh.visible = true;
+  const broomPadMaterial = broomMesh.userData.padMaterial;
+  if (broomPadMaterial?.color) {
+    broomPadMaterial.color.setHex(SIDE_COLORS[game.activeSide] ?? SIDE_COLORS[0]);
+  }
   const boost = resolveSweepBoost(game.activeStone);
   const wobble = Math.sin(performance.now() * 0.017) * (0.002 + boost * 0.11);
   broomMesh.position.x = game.activeStone.position.x + wobble;
-  broomMesh.position.y = game.activeStone.position.y + 0.9;
+  broomMesh.position.y = game.activeStone.position.y + 0.46;
   broomMesh.position.z = 0.08;
 
   broomMesh.rotation.z = Math.sin(performance.now() * 0.02) * (0.01 + boost * 0.22);
@@ -2193,12 +2323,24 @@ function updateSweepBar() {
   el.sweepFill.style.width = `${Math.round(clamp(boost, 0, 1) * 100)}%`;
 }
 
+function updateSweepReminder(now = performance.now()) {
+  const humanThrow = !(game.mode === "1p" && game.activeSide === 1);
+  const shouldPulse =
+    humanThrow &&
+    game.shotState === "running" &&
+    !game.sweep.userTouchedAfterHog &&
+    game.sweep.nearHogCrossAt > 0 &&
+    now - game.sweep.nearHogCrossAt >= SWEEP_REMINDER_DELAY_MS;
+  setSweepReminderPulse(shouldPulse);
+}
+
 function updateCamera(dt) {
   if (!camera) return;
 
   if (game.strategyView) {
-    cameraTargetPos.set(0, TEE_Y, 17.2);
-    cameraTargetLook.set(0, TEE_Y, 0);
+    const houseViewY = TEE_Y - 4.2;
+    cameraTargetPos.set(0, houseViewY, 17.4);
+    cameraTargetLook.set(0, houseViewY, 0);
     camera.position.lerp(cameraTargetPos, 1 - Math.pow(0.0015, dt));
     cameraLook.lerp(cameraTargetLook, 1 - Math.pow(0.0015, dt));
     camera.lookAt(cameraLook);
@@ -2216,25 +2358,25 @@ function updateCamera(dt) {
     cameraTargetLook.set(x, HACK_Y + 1.4, 0);
   }
 
-  if (game.cameraMode === "delivery" && game.activeStone && !game.activeStone.removed) {
-    const x = game.activeStone.position.x;
-    cameraTargetPos.set(x * 0.65, HACK_Y - 2.2, 9.1);
-    cameraTargetLook.set(x, HACK_Y + 4.6, 0);
-  }
-
-  if (game.cameraMode === "follow" && game.activeStone && !game.activeStone.removed) {
+  if (["delivery", "follow"].includes(game.cameraMode) && game.activeStone && !game.activeStone.removed) {
     const x = game.activeStone.position.x;
     const y = game.activeStone.position.y;
+    const shotProgress = clamp((y - HACK_Y) / (TEE_Y - HACK_Y + 2), 0, 1);
+    const midThrowZoom = 1 - Math.abs(shotProgress * 2 - 1);
+    const postNearHog = clamp((y - NEAR_HOG_Y) / 12, 0, 1);
     const houseApproach = clamp((y - (TEE_Y - 9)) / 9, 0, 1);
-    const midThrowBlend = clamp((y - RELEASE_LINE_Y) / (TEE_Y - RELEASE_LINE_Y), 0, 1);
+    const hogZoomBias = clamp((1 - houseApproach) * postNearHog, 0, 1);
+    const backOffset = lerp(5.4, 7.2, houseApproach) - midThrowZoom * 0.45 - hogZoomBias * 0.72;
+    const lookAhead = lerp(3.4, 1.5, houseApproach) - midThrowZoom * 0.45 - hogZoomBias * 0.34;
+
     cameraTargetPos.set(
-      x * lerp(0.92, 0.68, houseApproach),
-      clamp(y - lerp(6.9, 7.2, houseApproach), HACK_Y + 2.1, 14.2),
-      lerp(8.6, 9.4, houseApproach) - midThrowBlend * 0.5
+      x * lerp(0.8, 0.68, houseApproach),
+      clamp(y - backOffset, HACK_Y - 6.8, 14.2),
+      lerp(9.7, 9.4, houseApproach) - midThrowZoom * 1.4 - hogZoomBias * 1.2
     );
     cameraTargetLook.set(
-      x * lerp(0.52, 0.34, houseApproach),
-      clamp(y + lerp(0.7, 1.45, houseApproach), HACK_Y + 6.2, TEE_Y + 1.1),
+      x * lerp(0.62, 0.4, houseApproach),
+      clamp(y + lookAhead, HACK_Y + 1.8, TEE_Y + 1.1),
       0
     );
   }
