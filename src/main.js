@@ -153,7 +153,7 @@ function describeCurlGuidance(profile) {
     return "No handle: least predictable path, can drift either way.";
   }
   if (profile.tier === 1) {
-    return `${profile.directionLabel} low (1-2 turns): maximum curl, slightly shorter glide.`;
+    return `${profile.directionLabel} low (1-2 turns): max curl, slightly shorter glide.`;
   }
   if (profile.tier === 2) {
     return `${profile.directionLabel} standard (3-5 turns): balanced curl and distance.`;
@@ -1149,7 +1149,7 @@ function showEndReviewPanel(review, inHouse) {
   el.endReviewTitle.textContent = `End ${endedEnd} Complete`;
 
   if (review.scoringSide === null || review.points === 0) {
-    el.endReviewBody.textContent = "Blank end. Hammer carries over.";
+    el.endReviewBody.textContent = review.isFinalEnd ? "Blank end." : "Blank end. Hammer carries over.";
   } else {
     el.endReviewBody.textContent = `${countryLabel(review.scoringSide)} scores ${review.points} point${review.points === 1 ? "" : "s"}.`;
   }
@@ -2214,7 +2214,7 @@ function maybeResolveShotStop() {
   }
 
   const nextStoneNum = game.currentShot + 2;
-  el.statusLabel.textContent = nextStoneNum <= totalShots() ? `Stone ${nextStoneNum} coming up.` : "End complete.";
+  el.statusLabel.textContent = nextStoneNum <= totalShots() ? `Stone ${nextStoneNum} coming up.` : "Review scoring.";
 
   setTimeout(() => {
     if (!game.started) return;
@@ -2257,7 +2257,7 @@ function finishEnd() {
   broomMesh.visible = false;
   showControlPanel(null);
   setThrowButtonReady(false);
-  el.statusLabel.textContent = "End complete. Review the house and scoring.";
+  el.statusLabel.textContent = "Review scoring.";
 
   const isFinalEnd = endedEnd >= game.maxEnds;
   game.pendingEndReview = {
@@ -2369,6 +2369,7 @@ function updateSweepReminder(now = performance.now()) {
 
 function updateCamera(dt) {
   if (!camera) return;
+  const isMobileWidth = window.innerWidth <= 640;
 
   if (game.strategyView) {
     const houseViewY = TEE_Y - 4.2;
@@ -2388,7 +2389,7 @@ function updateCamera(dt) {
   if (["start", "positioning", "power", "curl_setup"].includes(game.cameraMode) && game.activeStone && !game.activeStone.removed) {
     const x = game.activeStone.position.x;
     cameraTargetPos.set(x * 0.62, HACK_Y - 4.8, 9.5);
-    cameraTargetLook.set(x, HACK_Y + 1.4, 0);
+    cameraTargetLook.set(x, HACK_Y + (isMobileWidth ? 0.55 : 1.4), 0);
   }
 
   if (["delivery", "follow"].includes(game.cameraMode) && game.activeStone && !game.activeStone.removed) {
@@ -2400,7 +2401,7 @@ function updateCamera(dt) {
     const houseApproach = clamp((y - (TEE_Y - 9)) / 9, 0, 1);
     const hogZoomBias = clamp((1 - houseApproach) * postNearHog, 0, 1);
     const backOffset = lerp(5.4, 7.2, houseApproach) - midThrowZoom * 0.45 - hogZoomBias * 0.72;
-    const lookAhead = lerp(3.4, 1.5, houseApproach) - midThrowZoom * 0.45 - hogZoomBias * 0.34;
+    const lookAhead = lerp(isMobileWidth ? 2.55 : 3.4, isMobileWidth ? 0.95 : 1.5, houseApproach) - midThrowZoom * 0.45 - hogZoomBias * 0.34;
 
     cameraTargetPos.set(
       x * lerp(0.8, 0.68, houseApproach),
@@ -2416,7 +2417,7 @@ function updateCamera(dt) {
 
   if (game.cameraMode === "house_overhead") {
     cameraTargetPos.set(0, TEE_Y, 17.8);
-    cameraTargetLook.set(0, TEE_Y, 0);
+    cameraTargetLook.set(0, TEE_Y - (isMobileWidth ? 1.35 : 0), 0);
   }
 
   camera.position.lerp(cameraTargetPos, 1 - Math.pow(0.0015, dt));
@@ -2436,14 +2437,14 @@ function updateHUD() {
   renderRemainingStoneIcons();
 
   const displayEnd = clamp(game.end, 1, game.maxEnds);
-  el.endLabel.textContent = `${displayEnd} / ${game.maxEnds}`;
+  el.endLabel.textContent = `${displayEnd}/${game.maxEnds}`;
 
   if (game.shotState === "end_review") {
-    el.shotLabel.textContent = "End Complete";
+    el.shotLabel.textContent = "Scoring";
   } else {
     const shotsPerEnd = totalShots();
     const shotNum = clamp(game.currentShot + 1, 1, shotsPerEnd);
-    el.shotLabel.textContent = `Stone ${shotNum} / ${shotsPerEnd}`;
+    el.shotLabel.textContent = `Stone ${shotNum}/${shotsPerEnd}`;
   }
 
   if (el.team0Card && el.team1Card) {

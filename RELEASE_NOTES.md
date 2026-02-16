@@ -1,5 +1,11 @@
 # Curling Clash Release Notes
 
+## v0.2.7 (2026-02-16)
+- Improved mobile HUD readability: compacted labels (`1/1`, `Stone X/Y`) and removed redundant "End complete" phrasing in the top status copy.
+- Improved mobile camera framing so active stones stay clearer above the bottom control panel during setup and throw tracking.
+- Updated end-review messaging so "Hammer carries over." is not shown on the final end.
+- Updated Curl Control guidance copy from "maximum curl" to "max curl".
+
 ## v0.2.6 (2026-02-15)
 - Hid/faded top HUD and sound toggle in House/Strategy view so stones remain visible.
 - Tuned back wall impact to heavily deaden rebounds and reduce disruptive bounce-back.

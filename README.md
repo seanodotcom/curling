@@ -1,6 +1,6 @@
 # Curling Clash
 
-Version: `v0.2.6`
+Version: `v0.2.7`
 
 Browser-based curling game (mobile-first, portrait layout) using:
 - Tailwind CSS for UI
