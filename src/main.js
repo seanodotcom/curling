@@ -20,7 +20,7 @@ const STONE_RADIUS = 0.145;
 const STONE_HEIGHT = 0.115;
 const MAX_HACK_X = 1.7;
 const STONE_OPTIONS = [1, 4, 8, 16];
-const DEFAULT_STONES_PER_SIDE = 16;
+const DEFAULT_STONES_PER_SIDE = 4;
 
 const HACK_Y = -20.3;
 const RELEASE_LINE_Y = -10.0;
@@ -232,7 +232,7 @@ const el = {
 
 const game = {
   mode: "1p",
-  maxEnds: 5,
+  maxEnds: 3,
   stonesPerSide: DEFAULT_STONES_PER_SIDE,
   countriesBySide: [0, 1],
   scores: [0, 0],
