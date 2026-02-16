@@ -880,6 +880,19 @@ function isAIThrowInProgress() {
   return game.mode === "1p" && game.activeSide === 1 && ["delivery", "running"].includes(game.shotState);
 }
 
+function updateStrategyViewChrome() {
+  const hide = game.strategyView;
+  if (el.hudOverlay) {
+    el.hudOverlay.classList.toggle("opacity-0", hide);
+    el.hudOverlay.classList.toggle("translate-y-1", hide);
+  }
+  if (el.soundToggleBtn) {
+    el.soundToggleBtn.classList.toggle("opacity-0", hide);
+    el.soundToggleBtn.classList.toggle("translate-y-1", hide);
+    el.soundToggleBtn.classList.toggle("pointer-events-none", hide);
+  }
+}
+
 function updateStrategyViewButton() {
   const available = canUseStrategyView();
   if (!available) game.strategyView = false;
@@ -895,6 +908,8 @@ function updateStrategyViewButton() {
       label.textContent = available && game.strategyView ? "Return" : "House";
     }
   });
+
+  updateStrategyViewChrome();
 }
 
 function updateFastForwardButton() {
