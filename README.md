@@ -1,10 +1,13 @@
 # Curling Clash
 
-Version: `v0.1`
+Version: `v0.2.6`
 
 Browser-based curling game (mobile-first, portrait layout) using:
 - Tailwind CSS for UI
 - three.js for rendering + custom stone physics/collision simulation
+
+Release notes:
+- `/Users/sean/Documents/CODE/Curling/RELEASE_NOTES.md`
 
 ## Run
 Because this uses ES modules, serve it over HTTP:
