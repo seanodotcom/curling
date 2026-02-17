@@ -203,6 +203,8 @@ const el = {
   strategyViewBtns: [...document.querySelectorAll(".strategy-view-btn")],
   fastForwardBtn: document.getElementById("fast-forward-btn"),
   fastForwardLabel: document.getElementById("fast-forward-label"),
+  fastForwardIconA: document.getElementById("fast-forward-icon-a"),
+  fastForwardIconB: document.getElementById("fast-forward-icon-b"),
   hudOverlay: document.getElementById("hud-overlay"),
   soundToggleBtn: document.getElementById("sound-toggle-btn"),
   soundToggleIcon: document.getElementById("sound-toggle-icon"),
@@ -934,15 +936,41 @@ function updateFastForwardButton() {
   const available = isAIThrowInProgress();
   if (!available) game.fastForwardMultiplier = 1;
 
-  const boosted = available && game.fastForwardMultiplier > 1;
   el.fastForwardBtn.classList.toggle("hidden", !available);
   el.fastForwardBtn.classList.toggle("inline-flex", available);
-  el.fastForwardBtn.classList.toggle("bg-emerald-600", boosted);
-  el.fastForwardBtn.classList.toggle("text-white", boosted);
-  el.fastForwardBtn.classList.toggle("bg-emerald-50/95", !boosted);
-  el.fastForwardBtn.classList.toggle("text-emerald-900", !boosted);
+
+  el.fastForwardBtn.classList.remove(
+    "bg-emerald-100/95",
+    "border-emerald-300",
+    "text-emerald-900",
+    "bg-emerald-400",
+    "border-emerald-500",
+    "text-emerald-950",
+    "bg-emerald-700",
+    "border-emerald-800",
+    "text-white"
+  );
+
+  const speed = game.fastForwardMultiplier;
+  if (speed === 1) {
+    el.fastForwardBtn.classList.add("bg-emerald-100/95", "border-emerald-300", "text-emerald-900");
+    if (el.fastForwardIconA) el.fastForwardIconA.textContent = "play_arrow";
+    if (el.fastForwardIconB) el.fastForwardIconB.classList.add("hidden");
+  } else if (speed === 2) {
+    el.fastForwardBtn.classList.add("bg-emerald-400", "border-emerald-500", "text-emerald-950");
+    if (el.fastForwardIconA) el.fastForwardIconA.textContent = "fast_forward";
+    if (el.fastForwardIconB) el.fastForwardIconB.classList.add("hidden");
+  } else {
+    el.fastForwardBtn.classList.add("bg-emerald-700", "border-emerald-800", "text-white");
+    if (el.fastForwardIconA) el.fastForwardIconA.textContent = "fast_forward";
+    if (el.fastForwardIconB) {
+      el.fastForwardIconB.textContent = "fast_forward";
+      el.fastForwardIconB.classList.remove("hidden");
+    }
+  }
+
   if (el.fastForwardLabel) {
-    el.fastForwardLabel.textContent = `${game.fastForwardMultiplier}X`;
+    el.fastForwardLabel.textContent = `${speed}X`;
   }
 }
 
@@ -1230,7 +1258,7 @@ function showSweepControlsWithFade() {
 
 function initThree() {
   scene = new THREE.Scene();
-  scene.background = new THREE.Color(0xf3f8ff);
+  scene.background = new THREE.Color(0x0a44ce);
 
   camera = new THREE.PerspectiveCamera(42, 9 / 16, 0.1, 200);
   camera.position.set(0, 0, 26);

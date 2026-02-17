@@ -210,7 +210,7 @@
   </head>
   <body class="min-h-screen bg-[radial-gradient(circle_at_20%_15%,#eff6ff_0%,#dbeafe_22%,#93c5fd_58%,#075985_100%)] font-body text-slate-900">
     <main class="mx-auto flex min-h-screen w-full max-w-6xl items-center justify-center p-2 sm:p-4">
-      <section id="game-shell" class="relative w-full max-w-md overflow-hidden rounded-[2rem] border-4 border-slate-100 shadow-glow aspect-[9/16] bg-slate-300">
+      <section id="game-shell" class="relative w-full max-w-md overflow-hidden rounded-[2rem] border-4 border-slate-100 shadow-glow aspect-[9/16] bg-[#0a44ce]">
         <canvas id="game-canvas" class="absolute inset-0 h-full w-full touch-none"></canvas>
 
         <div class="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(255,255,255,.18),rgba(255,255,255,.02))]"></div>
@@ -326,8 +326,11 @@
           </div>
         </section>
 
-        <button id="fast-forward-btn" class="absolute bottom-3 right-3 z-30 hidden items-center gap-1 rounded-xl border border-emerald-300 bg-emerald-50/95 px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-emerald-900 shadow">
-          <span class="material-symbols-rounded" aria-hidden="true">fast_forward</span>
+        <button id="fast-forward-btn" class="absolute bottom-3 right-3 z-30 hidden items-center gap-1 rounded-xl border border-emerald-300 bg-emerald-100/95 px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-emerald-900 shadow">
+          <span class="inline-flex items-center gap-0" aria-hidden="true">
+            <span id="fast-forward-icon-a" class="material-symbols-rounded text-[15px] leading-none">play_arrow</span>
+            <span id="fast-forward-icon-b" class="material-symbols-rounded hidden text-[15px] leading-none">fast_forward</span>
+          </span>
           <span id="fast-forward-label">1X</span>
         </button>
 
@@ -366,7 +369,10 @@
         <div id="new-game-overlay" class="absolute inset-0 z-40 flex items-center justify-center bg-sky-950/60 p-4">
           <form id="new-game-form" class="w-full max-w-sm rounded-3xl border border-white/60 bg-white p-5 shadow-2xl">
             <div class="mb-2 flex items-center justify-center">
-              <img src="./assets/logos/logo-main.png" alt="Curling Clash logo" class="h-auto w-full max-w-[320px] select-none" draggable="false" />
+              <div class="relative w-full max-w-[320px]">
+                <img src="./assets/logos/logo-main.png" alt="Curling Clash logo" class="h-auto w-full select-none" draggable="false" />
+                <span class="pointer-events-none absolute bottom-2 right-2 text-[10px] font-semibold tracking-wide text-slate-400">v0.2.7</span>
+              </div>
             </div>
 
             <div class="mt-4">
