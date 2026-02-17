@@ -1,0 +1,36 @@
+<svg width="1200" height="600" viewBox="0 0 1200 600" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="ice" x1="0" y1="0" x2="1200" y2="600" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#EAF6FF"/>
+      <stop offset="1" stop-color="#CFE8FF"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="600" rx="36" fill="url(#ice)"/>
+
+  <g transform="translate(70 70)">
+    <rect x="0" y="0" width="470" height="460" rx="48" fill="#FFFFFF" stroke="#C7DCEE" stroke-width="8"/>
+
+    <path d="M235 86C146 86 74 158 74 247C74 336 146 408 235 408" stroke="#2F6FE4" stroke-width="40" stroke-linecap="round"/>
+    <path d="M235 126C170 126 118 179 118 244C118 309 170 362 235 362" stroke="#FFFFFF" stroke-width="34" stroke-linecap="round"/>
+    <path d="M235 160C188 160 150 198 150 245C150 292 188 330 235 330" stroke="#E93D43" stroke-width="24" stroke-linecap="round"/>
+
+    <g transform="translate(270 213)">
+      <ellipse cx="54" cy="36" rx="50" ry="30" fill="#8C98A6"/>
+      <ellipse cx="54" cy="28" rx="43" ry="24" fill="#B3BCC8"/>
+      <ellipse cx="54" cy="26" rx="22" ry="11" fill="#F1C62D"/>
+      <ellipse cx="54" cy="26" rx="13" ry="6" fill="#B69419"/>
+    </g>
+  </g>
+
+  <g transform="translate(570 145)">
+    <text x="0" y="118" font-size="108" font-weight="800" fill="#0F355A" font-family="'Verdana', 'Segoe UI', sans-serif" letter-spacing="4">CURLING</text>
+    <text x="0" y="228" font-size="108" font-weight="800" fill="#1D64AE" font-family="'Verdana', 'Segoe UI', sans-serif" letter-spacing="4">CLASH!</text>
+
+    <g transform="translate(2 264)">
+      <circle cx="18" cy="18" r="10" fill="#E93D43"/>
+      <circle cx="58" cy="18" r="10" fill="#2F6FE4"/>
+      <circle cx="98" cy="18" r="10" fill="#F1C62D"/>
+      <text x="132" y="28" font-size="28" font-weight="700" fill="#4D6780" font-family="'Verdana', 'Segoe UI', sans-serif" letter-spacing="2">ICE • ANGLE • IMPACT</text>
+    </g>
+  </g>
+</svg>

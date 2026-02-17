@@ -1,0 +1,50 @@
+<svg width="1200" height="600" viewBox="0 0 1200 600" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="graniteTop" x1="60" y1="220" x2="130" y2="252" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#9AA4AF"/>
+      <stop offset="1" stop-color="#778390"/>
+    </linearGradient>
+    <linearGradient id="graniteLower" x1="55" y1="248" x2="132" y2="273" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#B4BDC7"/>
+      <stop offset="1" stop-color="#929DAA"/>
+    </linearGradient>
+    <linearGradient id="handleYellow" x1="73" y1="205" x2="114" y2="232" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F6D742"/>
+      <stop offset="1" stop-color="#D4AF25"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="600" rx="36" fill="#EAF4FF"/>
+  <rect x="28" y="28" width="1144" height="544" rx="28" fill="white"/>
+
+  <g transform="translate(110 120)">
+    <rect x="0" y="0" width="340" height="340" rx="32" fill="#F5FAFF" stroke="#D6E7F9" stroke-width="6"/>
+    <line x1="170" y1="24" x2="170" y2="316" stroke="#8FAAC2" stroke-width="3"/>
+    <line x1="24" y1="170" x2="316" y2="170" stroke="#8FAAC2" stroke-width="3"/>
+
+    <circle cx="170" cy="170" r="120" fill="#2F6FE4"/>
+    <circle cx="170" cy="170" r="78" fill="white"/>
+    <circle cx="170" cy="170" r="42" fill="#E93D43"/>
+    <circle cx="170" cy="170" r="15" fill="white"/>
+
+    <g transform="translate(0 2)">
+      <ellipse cx="95" cy="271" rx="43" ry="10" fill="#5C6572" opacity="0.18"/>
+      <ellipse cx="95" cy="247" rx="43" ry="25" fill="url(#graniteLower)"/>
+      <ellipse cx="95" cy="236" rx="41" ry="21" fill="url(#graniteTop)"/>
+      <ellipse cx="95" cy="248" rx="39" ry="9" fill="#7F8A97" opacity="0.45"/>
+      <ellipse cx="95" cy="227" rx="25" ry="10" fill="url(#handleYellow)"/>
+      <path d="M88 228C88 219 92 212 97 211C102 210 106 218 106 226" stroke="url(#handleYellow)" stroke-width="8" stroke-linecap="round" fill="none"/>
+      <path d="M90 228C90 221 93 216 97 215" stroke="#FAE682" stroke-width="2" stroke-linecap="round" opacity="0.8" fill="none"/>
+      <circle cx="97" cy="227" r="2.5" fill="#7A6A1D" opacity="0.45"/>
+      <ellipse cx="83" cy="234" rx="7" ry="2.2" fill="#F9EEA2" opacity="0.55"/>
+      <ellipse cx="111" cy="234" rx="6" ry="2" fill="#C99E1D" opacity="0.45"/>
+    </g>
+  </g>
+
+  <g transform="translate(500 160)">
+    <text x="0" y="140" font-size="112" font-weight="800" fill="#0D355D" font-family="'Avenir Next', 'Segoe UI', sans-serif" letter-spacing="2">CURLING</text>
+    <text x="0" y="250" font-size="112" font-weight="900" fill="#1E66B1" font-family="'Avenir Next', 'Segoe UI', sans-serif" letter-spacing="2">CLASH!</text>
+    <rect x="0" y="278" width="500" height="10" rx="5" fill="#2F6FE4"/>
+    <rect x="0" y="302" width="320" height="10" rx="5" fill="#E93D43"/>
+    <text x="0" y="350" font-size="30" font-weight="600" fill="#50708E" font-family="'Avenir Next', 'Segoe UI', sans-serif" letter-spacing="3">SLIDE. SWEEP. SCORE.</text>
+  </g>
+</svg>

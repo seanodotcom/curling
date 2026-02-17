@@ -1,0 +1,33 @@
+<svg width="1200" height="600" viewBox="0 0 1200 600" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1200" y2="600" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0D2E4D"/>
+      <stop offset="1" stop-color="#1A5A93"/>
+    </linearGradient>
+    <linearGradient id="trail" x1="130" y1="140" x2="460" y2="360" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#66C7FF"/>
+      <stop offset="1" stop-color="#BCEBFF"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1200" height="600" rx="36" fill="url(#bg)"/>
+
+  <g transform="translate(90 70)">
+    <path d="M70 360C180 270 210 190 300 120C360 75 430 70 500 100" stroke="url(#trail)" stroke-width="26" stroke-linecap="round" opacity="0.9"/>
+    <path d="M70 360C180 270 210 190 300 120C360 75 430 70 500 100" stroke="#E7F8FF" stroke-width="8" stroke-linecap="round" opacity="0.95"/>
+
+    <g transform="translate(46 334)">
+      <ellipse cx="48" cy="30" rx="48" ry="30" fill="#8A95A2"/>
+      <ellipse cx="48" cy="22" rx="42" ry="24" fill="#B3BCC8"/>
+      <ellipse cx="48" cy="20" rx="24" ry="12" fill="#E93D43"/>
+      <ellipse cx="48" cy="20" rx="16" ry="8" fill="#C62C31"/>
+    </g>
+  </g>
+
+  <g transform="translate(520 142)">
+    <text x="0" y="130" font-size="114" font-weight="900" fill="#FFFFFF" font-family="'Trebuchet MS', 'Segoe UI', sans-serif" letter-spacing="3">CURLING</text>
+    <text x="0" y="240" font-size="114" font-weight="900" fill="#9AD9FF" font-family="'Trebuchet MS', 'Segoe UI', sans-serif" letter-spacing="3">CLASH!</text>
+    <rect x="0" y="276" width="520" height="12" rx="6" fill="#9AD9FF" opacity="0.4"/>
+    <text x="0" y="336" font-size="30" font-weight="600" fill="#D9ECFF" font-family="'Trebuchet MS', 'Segoe UI', sans-serif" letter-spacing="3">FAST ICE. HEAVY STONE.</text>
+  </g>
+</svg>
